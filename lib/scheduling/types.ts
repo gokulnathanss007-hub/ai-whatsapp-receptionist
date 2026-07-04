@@ -16,6 +16,8 @@ export interface BookSlotParams {
   name: string;
   mobile: string;
   reason: string;
+  /** The inbound wa_message_id driving this attempt — lets bookSlot() recognize an idempotent retry of its own prior success. */
+  waMessageId: string;
 }
 
 export type BookSlotResult =

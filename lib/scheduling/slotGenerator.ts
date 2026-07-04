@@ -1,5 +1,6 @@
 import { DateTime } from "luxon";
 import type { WorkingHours } from "@/lib/supabase/types";
+import { encodeSlotId } from "@/lib/scheduling/slotId";
 import type { SchedulingSlot } from "@/lib/scheduling/types";
 
 const WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
@@ -34,7 +35,7 @@ export function generateCandidateSlots(params: {
         if (cursor > now) {
           const slotEnd = cursor.plus({ minutes: slotDurationMinutes });
           slots.push({
-            id: Buffer.from(cursor.toUTC().toISO()!).toString("base64url"),
+            id: encodeSlotId(cursor.toUTC().toISO()!),
             startsAt: cursor.toUTC().toISO()!,
             endsAt: slotEnd.toUTC().toISO()!,
             label: formatLabel(cursor, now),
@@ -66,10 +67,18 @@ export function filterOutBusy(
 
 function setTimeOfDay(day: DateTime, hhmm: string): DateTime {
   const [hour, minute] = hhmm.split(":").map(Number);
+  // "24:00" means end-of-day (midnight into the next day) — luxon rejects
+  // hour 24, and without this a working-hours range ending at midnight
+  // (e.g. ["23:00","24:00"]) would silently generate zero slots, dropping
+  // the clinic's last bookable slot of the day (23:30–00:00).
+  if (hour === 24 && (minute ?? 0) === 0) {
+    return day.plus({ days: 1 }).startOf("day");
+  }
   return day.set({ hour, minute, second: 0, millisecond: 0 });
 }
 
-function formatLabel(slot: DateTime, now: DateTime): string {
+/** Exported for bookSlot.ts's idempotent-retry path, which reconstructs a label for an already-booked slot rather than generating fresh candidates. */
+export function formatLabel(slot: DateTime, now: DateTime): string {
   const dayLabel = slot.hasSame(now, "day")
     ? "Today"
     : slot.hasSame(now.plus({ days: 1 }), "day")

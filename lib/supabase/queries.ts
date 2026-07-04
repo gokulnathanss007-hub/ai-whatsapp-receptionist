@@ -13,6 +13,7 @@ import type {
 } from "@/lib/supabase/types";
 import type {
   AppointmentRequestPayload,
+  BookingStatus,
   CollectedSlots,
   ConversationStage,
   HandoffReason,
@@ -196,6 +197,8 @@ export async function updateConversationAfterTurn(params: {
   mergedSlots: CollectedSlots;
   humanHandoff: boolean;
   handoffReason: HandoffReason | null;
+  /** Omit to leave booking_status untouched — most turns (FAQ, qualifying, etc.) aren't booking-related. */
+  bookingStatus?: BookingStatus;
 }): Promise<void> {
   const { error } = await getSupabaseClient()
     .from("conversations")
@@ -205,9 +208,67 @@ export async function updateConversationAfterTurn(params: {
       human_handoff: params.humanHandoff,
       handoff_reason: params.handoffReason,
       last_message_at: new Date().toISOString(),
+      ...(params.bookingStatus !== undefined
+        ? { booking_status: params.bookingStatus, booking_status_updated_at: new Date().toISOString() }
+        : {}),
     })
     .eq("id", params.conversationId);
   if (error) throw error;
+}
+
+/**
+ * Atomically claims the right to attempt a booking for this conversation —
+ * backed by the claim_booking_attempt() Postgres function (see
+ * 0007_claim_booking_attempt.sql) so two near-simultaneous inbound messages
+ * (e.g. a patient double-tapping "Confirm") can never both proceed to call
+ * Google Calendar. Returns false if another attempt already holds the claim
+ * (in flight or already confirmed) — callers must NOT attempt the booking in
+ * that case, and must not touch booking_status further (the run that holds
+ * the claim owns the next transition). Returns true if this call is either
+ * the first claim or a retry of the exact same wa_message_id.
+ */
+export async function beginBookingAttempt(conversationId: string, waMessageId: string): Promise<boolean> {
+  const { data, error } = await getSupabaseClient().rpc("claim_booking_attempt", {
+    p_conversation_id: conversationId,
+    p_wa_message_id: waMessageId,
+  });
+  if (error) throw error;
+  return data === true;
+}
+
+/** Marks a stale booking_in_progress as timed out — see the staleness check in trigger/replyPipeline.ts. */
+export async function markBookingTimeout(conversationId: string): Promise<void> {
+  const { error } = await getSupabaseClient()
+    .from("conversations")
+    .update({
+      booking_status: "timeout" satisfies BookingStatus,
+      booking_status_updated_at: new Date().toISOString(),
+    })
+    .eq("id", conversationId);
+  if (error) throw error;
+}
+
+/**
+ * Sweeps every conversation still stuck at booking_in_progress older than
+ * `staleBeforeIso` into a terminal timeout state. Backstop for the case the
+ * reactive check in replyPipeline.ts can't cover: if the patient never sends
+ * another message after a run crashes mid-booking, nothing would otherwise
+ * ever move that conversation out of booking_in_progress. Called from the
+ * scheduled trigger/bookingTimeoutSweep.ts task. Returns the ids that were
+ * flipped, for logging.
+ */
+export async function markStaleBookingsTimedOut(staleBeforeIso: string): Promise<string[]> {
+  const { data, error } = await getSupabaseClient()
+    .from("conversations")
+    .update({
+      booking_status: "timeout" satisfies BookingStatus,
+      booking_status_updated_at: new Date().toISOString(),
+    })
+    .eq("booking_status", "booking_in_progress")
+    .lt("booking_status_updated_at", staleBeforeIso)
+    .select("id");
+  if (error) throw error;
+  return (data ?? []).map((row) => row.id as string);
 }
 
 export async function insertAppointmentRequest(params: {
@@ -342,6 +403,8 @@ export async function insertAppointment(params: {
   slotStart: string;
   slotEnd: string;
   timezone: string;
+  /** The inbound message that triggered this booking — see getAppointmentByWaMessageId(). */
+  waMessageId: string;
 }): Promise<AppointmentRow> {
   const { data, error } = await getSupabaseClient()
     .from("appointments")
@@ -356,11 +419,29 @@ export async function insertAppointment(params: {
       slot_start: params.slotStart,
       slot_end: params.slotEnd,
       timezone: params.timezone,
+      wa_message_id: params.waMessageId,
     })
     .select("*")
     .single();
   if (error) throw error;
   return data as AppointmentRow;
+}
+
+/**
+ * Idempotent-retry recovery for bookSlot(): if a task run crashes after this
+ * exact message already created a confirmed appointment, but before the
+ * reply was sent, a Trigger.dev retry must recognize that and resend the
+ * same confirmation — never report the (now correctly unavailable) slot as
+ * a conflict to the patient who just booked it.
+ */
+export async function getAppointmentByWaMessageId(waMessageId: string): Promise<AppointmentRow | null> {
+  const { data, error } = await getSupabaseClient()
+    .from("appointments")
+    .select("*")
+    .eq("wa_message_id", waMessageId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as AppointmentRow | null;
 }
 
 export async function markAppointmentSynced(

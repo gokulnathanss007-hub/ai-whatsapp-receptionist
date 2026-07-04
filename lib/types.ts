@@ -68,6 +68,20 @@ export const conversationStages = [
 ] as const;
 export type ConversationStage = (typeof conversationStages)[number];
 
+// Persisted record of where a real calendar-booking attempt actually is —
+// the backend's own truth, never the AI's free-text claim about progress.
+// See /supabase/migrations/0006_conversation_booking_status.sql and
+// /lib/ai/bookingStatus.ts for the one-way transition rule.
+export const bookingStatuses = [
+  "none",
+  "waiting_for_confirmation",
+  "booking_in_progress",
+  "confirmed",
+  "failed",
+  "timeout",
+] as const;
+export type BookingStatus = (typeof bookingStatuses)[number];
+
 export const appointmentRequestStatuses = [
   "requested",
   "confirmed",

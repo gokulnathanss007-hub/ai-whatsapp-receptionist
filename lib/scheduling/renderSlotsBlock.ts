@@ -18,12 +18,16 @@ export function renderAvailableSlotsBlock(slots: SchedulingSlot[]): string {
  * (or the picked slot id was stale) — built directly from freshly re-fetched
  * alternatives, no second LLM call. See /docs/GOOGLE_CALENDAR_INTEGRATION.md §6.
  */
+// Wording note for every reply below: patient-facing text must use easy,
+// everyday words — many patients are not fluent in English. Short sentences,
+// no words like "unavailable"/"alternatives"/"confirm shortly". Mirrors the
+// TONE rules in /prompts/system_prompt.md.
 export function renderSlotConflictReply(alternatives: SchedulingSlot[]): string {
   if (alternatives.length === 0) {
-    return "That time has already been booked, and nothing else is open right now. Our staff will follow up with timing shortly.";
+    return "Sorry, that time was just taken, and no other times are open right now. Our staff will message you soon with new times.";
   }
   const lines = alternatives.map((slot) => `• ${slot.label}`).join("\n");
-  return `That time has already been booked.\n\nThe nearest available times are:\n\n${lines}\n\nWhich would you prefer?`;
+  return `Sorry, that time was just taken.\n\nHere are the closest open times:\n\n${lines}\n\nWhich time works for you?`;
 }
 
 /**
@@ -42,7 +46,7 @@ export function renderBookingConfirmation(params: {
 }): string {
   const [datePart, timePart] = params.slot.label.split(" – ");
   const doctorLine = params.doctorName ? `\n👩‍⚕️ Doctor: ${params.doctorName}` : "";
-  return `✅ Your appointment has been confirmed.\n\n📅 Date: ${datePart}\n🕒 Time: ${timePart}${doctorLine}\n\nWe look forward to seeing you at ${params.clinicName}.`;
+  return `✅ Your appointment is booked.\n\n📅 Date: ${datePart}\n🕒 Time: ${timePart}${doctorLine}\n\nSee you at ${params.clinicName}. Thank you!`;
 }
 
 /**
@@ -56,11 +60,11 @@ export function renderBookingConfirmation(params: {
  */
 export function renderSlotsPresentation(slots: SchedulingSlot[], doctorName?: string): string {
   if (slots.length === 0) {
-    return "I don't see any open times right now — I'll have our staff follow up with timing.";
+    return "Sorry, no times are open right now. Our staff will message you soon with new times.";
   }
   const lines = slots.map((slot) => `• ${slot.label}`).join("\n");
   const doctorPart = doctorName ? ` with ${doctorName}` : "";
-  return `Here's what's available${doctorPart}:\n\n${lines}\n\nWhich would you prefer?`;
+  return `Here are the open times${doctorPart}:\n\n${lines}\n\nWhich time works for you?`;
 }
 
 /**
@@ -78,8 +82,8 @@ export function renderRequestedSlotUnavailable(
   alternatives: SchedulingSlot[],
 ): string {
   if (alternatives.length === 0) {
-    return `${requestedLabel} is no longer available, and nothing else is open right now. Our staff will follow up with timing shortly.`;
+    return `Sorry, ${requestedLabel} is not free, and no other times are open right now. Our staff will message you soon with new times.`;
   }
   const lines = alternatives.map((slot) => `• ${slot.label}`).join("\n");
-  return `${requestedLabel} is no longer available.\n\nThe nearest available times are:\n\n${lines}\n\nWhich would you prefer?`;
+  return `Sorry, ${requestedLabel} is not free.\n\nHere are the closest open times:\n\n${lines}\n\nWhich time works for you?`;
 }

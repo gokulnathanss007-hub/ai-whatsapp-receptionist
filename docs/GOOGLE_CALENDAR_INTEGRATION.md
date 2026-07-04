@@ -383,6 +383,38 @@ re-fetched `SchedulingSlot[]`, no second LLM call. Every other reply path (FAQ, 
 handoff, legacy free-text booking) is untouched and keeps sending the model's `reply` verbatim,
 exactly as today.
 
+### Supported date/time expressions (`lib/scheduling/requestedDateTime.ts`)
+
+`resolveRequestedDateTime` resolves a patient's free text into an exact clinic-local target
+**only when both a day cue and an explicit clock time with an AM/PM marker are present** (or
+the day is omitted entirely, meaning today). Everything else deliberately resolves to `null`
+— a wrong guess would drive which slot gets treated as authoritative, so no guess is ever
+made. Regression-tested in `tests/scheduling/ambiguousRequests.test.ts` and
+`tests/scheduling/timezone.test.ts`.
+
+| Patient says | Resolves to | Why |
+|---|---|---|
+| "today 7 PM" / "7 PM" | Today 19:00 clinic-local | Explicit time; missing day defaults to today |
+| "tomorrow 6 PM" | Tomorrow 18:00 | Explicit day + time |
+| "Monday 5 PM" | Coming Monday 17:00 (today if today is Monday and 5 PM is still ahead; next week if passed) | Weekday + explicit time |
+| "next Monday 5 PM" | Always the following week's Monday | "next" skips today even if today is Monday |
+| "Book Monday" (no time) | `null` | Day without a clock time |
+| "tomorrow evening" / "in the morning" / "after lunch" | `null` | Day-part words, no clock time |
+| "after 5" / "at 5" | `null` | No AM/PM marker — 5 AM vs 5 PM is a guess |
+| "next week" / "anytime tomorrow" | `null` | No concrete time |
+| "12/8 at 5 PM" | `null` | Numeric dates are ambiguous (Dec 8 vs Aug 12) |
+
+**What `null` means downstream (the safe path, not an error):** the pipeline falls back to
+the patient's already-collected `preferred_date`/`preferred_time` if present; otherwise it
+presents the real availability list and the patient picks an entry explicitly. A booking then
+proceeds only via a picked slot id, still protected by `verifySlotIntegrity` and the
+time-mention mismatch guard. Vague phrasing can therefore never produce a guessed booking —
+at worst it costs one extra "which time works for you?" turn.
+
+All resolution happens in the clinic's IANA timezone (`clinics.timezone`); slot ids encode
+the UTC instant, and labels render clinic-local — the timezone tests prove the same instant
+is preserved across the local-midnight/UTC-date boundary (e.g. a 23:30–00:00 slot).
+
 ---
 
 ## 7. Race condition protection

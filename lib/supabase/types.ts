@@ -2,6 +2,7 @@
 // Regenerate/replace with `supabase gen types typescript` once a live project exists.
 import type {
   AppointmentRequestStatus,
+  BookingStatus,
   ConversationStage,
   HandoffReason,
 } from "@/lib/types";
@@ -83,6 +84,9 @@ export interface ConversationRow {
   collected_slots: Record<string, unknown>;
   human_handoff: boolean;
   handoff_reason: HandoffReason | null;
+  booking_status: BookingStatus;
+  booking_status_updated_at: string;
+  booking_in_progress_message_id: string | null;
   last_message_at: string;
   created_at: string;
 }
@@ -160,6 +164,8 @@ export interface AppointmentRow {
   status: AppointmentStatus;
   sync_status: AppointmentSyncStatus;
   last_sync_error: string | null;
+  /** The inbound wa_message_id whose processing created this row — see 0008_appointments_wa_message_id.sql. */
+  wa_message_id: string | null;
   created_at: string;
   updated_at: string;
 }

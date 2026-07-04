@@ -1,3 +1,4 @@
+import { DateTime } from "luxon";
 import { google } from "googleapis";
 import { getValidGoogleClient } from "@/lib/google/tokenManager";
 import { getBookedSlotWindows, getClinic, getClinicGoogleAccount } from "@/lib/supabase/queries";
@@ -33,6 +34,16 @@ export async function listAvailableSlots(params: {
   clinicId: string;
   daysAhead?: number;
   requestHint?: string;
+  /**
+   * Exact UTC start instant to check, bypassing free-text parsing — used by
+   * bookSlot()'s re-verification, where the slot id already encodes the
+   * precise instant. Without this, the re-check saw only the earliest
+   * MAX_OFFERED_SLOTS slots, so booking any slot further out (e.g. "Monday
+   * 5 PM" booked on a Saturday) failed as slot_unavailable even though the
+   * slot was genuinely free — and the "alternatives" offered were today's
+   * earliest times, the exact substitution family this file exists to kill.
+   */
+  exactStartUtcIso?: string;
 }): Promise<SchedulingSlot[] | null> {
   const account = await getClinicGoogleAccount(params.clinicId);
   if (!account || account.sync_status !== "connected") return null;
@@ -50,9 +61,14 @@ export async function listAvailableSlots(params: {
   if (!client) return null;
 
   const now = new Date();
-  const target = params.requestHint
-    ? resolveRequestedDateTime({ text: params.requestHint, timezone: clinic.timezone, now })
-    : null;
+  let target: DateTime | null = null;
+  if (params.exactStartUtcIso) {
+    const exact = DateTime.fromISO(params.exactStartUtcIso, { zone: "utc" });
+    if (!exact.isValid) return [];
+    target = exact;
+  } else if (params.requestHint) {
+    target = resolveRequestedDateTime({ text: params.requestHint, timezone: clinic.timezone, now });
+  }
 
   let daysAhead = params.daysAhead ?? DEFAULT_LOOKAHEAD_DAYS;
   if (target) {

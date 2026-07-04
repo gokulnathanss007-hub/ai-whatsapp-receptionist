@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { isAdminRequestAuthorized } from "@/lib/google/adminAuth";
 import { getSchedulingProvider } from "@/lib/scheduling";
 import { getOrCreateOpenConversation, getOrCreatePatient } from "@/lib/supabase/queries";
@@ -51,6 +52,11 @@ export async function POST(request: Request): Promise<Response> {
     name,
     mobile,
     reason,
+    // No real inbound WhatsApp message drives this manual/admin endpoint —
+    // a fresh synthetic id per call still satisfies the idempotent-retry
+    // correlation in bookSlot.ts (see /lib/scheduling/bookSlot.ts) without
+    // colliding with the unique index on appointments.wa_message_id.
+    waMessageId: `manual:${randomUUID()}`,
   });
 
   return Response.json(result, { status: result.ok ? 200 : 409 });
