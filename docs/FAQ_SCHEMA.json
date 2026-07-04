@@ -1,0 +1,153 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Medixum AI — Clinic FAQ Schema",
+  "description": "Structured, per-clinic FAQ knowledge base. One document per clinic. Injected into the receptionist prompt as the clinic knowledge block. Adding or editing FAQs never requires a code change.",
+  "type": "object",
+  "required": ["clinic_id", "version", "faqs"],
+  "properties": {
+    "clinic_id": {
+      "type": "string",
+      "description": "Stable unique id for the clinic (matches clinics.id in Supabase)."
+    },
+    "version": {
+      "type": "integer",
+      "description": "Increment on every edit; used for cache invalidation of the injected knowledge block."
+    },
+    "locale": {
+      "type": "string",
+      "default": "en",
+      "description": "Language of these FAQ answers. MVP: 'en'. Future: 'ta', 'ta-en' (Tanglish)."
+    },
+    "faqs": {
+      "type": "array",
+      "description": "List of FAQ entries.",
+      "items": {
+        "type": "object",
+        "required": ["id", "category", "question", "answer"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable id for the FAQ entry, e.g. 'consultation_fee'."
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "consultation_fee",
+              "clinic_timings",
+              "parking",
+              "insurance",
+              "location",
+              "doctors",
+              "treatments",
+              "payment_methods",
+              "follow_up_policy",
+              "appointment_cancellation",
+              "rescheduling",
+              "other"
+            ],
+            "description": "FAQ category, aligned with INTENTS.md."
+          },
+          "question": {
+            "type": "string",
+            "description": "Canonical question phrasing (for staff readability)."
+          },
+          "answer": {
+            "type": "string",
+            "description": "The approved answer. Must be short and factual. The receptionist paraphrases this warmly but must not contradict it or invent beyond it."
+          },
+          "keywords": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional matching hints for retrieval/routing."
+          },
+          "requires_staff": {
+            "type": "boolean",
+            "default": false,
+            "description": "If true, the receptionist defers to staff instead of answering directly (e.g. sensitive billing questions)."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+
+  "example": {
+    "clinic_id": "glow-skin-madurai-001",
+    "version": 3,
+    "locale": "en",
+    "faqs": [
+      {
+        "id": "consultation_fee",
+        "category": "consultation_fee",
+        "question": "What is the consultation fee?",
+        "answer": "Our consultation fee is ₹500.",
+        "keywords": ["fee", "charges", "consultation cost", "price"]
+      },
+      {
+        "id": "clinic_timings",
+        "category": "clinic_timings",
+        "question": "What are your clinic timings?",
+        "answer": "We are open Monday to Saturday, 10 AM to 8 PM. We are closed on Sundays.",
+        "keywords": ["timing", "open", "hours", "working hours"]
+      },
+      {
+        "id": "location",
+        "category": "location",
+        "question": "Where is the clinic located?",
+        "answer": "We are at 1st Floor, Anna Nagar Main Road, Madurai. Google Maps link is shared on request.",
+        "keywords": ["address", "where", "location", "directions", "maps"]
+      },
+      {
+        "id": "parking",
+        "category": "parking",
+        "question": "Is parking available?",
+        "answer": "Yes, two-wheeler and car parking are available in front of the clinic.",
+        "keywords": ["parking", "car", "bike"]
+      },
+      {
+        "id": "insurance",
+        "category": "insurance",
+        "question": "Do you accept insurance?",
+        "answer": "Most cosmetic and dermatology consultations are self-pay. For specific insurance queries, our staff will assist you.",
+        "keywords": ["insurance", "claim", "mediclaim"],
+        "requires_staff": true
+      },
+      {
+        "id": "doctors",
+        "category": "doctors",
+        "question": "Who are the doctors?",
+        "answer": "Consultations are with Dr. Meera, our consultant dermatologist. Cosmetology procedures are performed under her supervision.",
+        "keywords": ["doctor", "dermatologist", "who"]
+      },
+      {
+        "id": "payment_methods",
+        "category": "payment_methods",
+        "question": "What payment methods are accepted?",
+        "answer": "We accept cash, UPI, and cards.",
+        "keywords": ["payment", "upi", "card", "cash", "gpay"]
+      },
+      {
+        "id": "follow_up_policy",
+        "category": "follow_up_policy",
+        "question": "Is there a follow-up charge?",
+        "answer": "A follow-up within 7 days of consultation is complimentary.",
+        "keywords": ["follow up", "review", "revisit"]
+      },
+      {
+        "id": "appointment_cancellation",
+        "category": "appointment_cancellation",
+        "question": "How do I cancel an appointment?",
+        "answer": "You can let us know here and our staff will cancel it for you.",
+        "keywords": ["cancel", "cancellation"]
+      },
+      {
+        "id": "rescheduling",
+        "category": "rescheduling",
+        "question": "Can I reschedule my appointment?",
+        "answer": "Yes, share your preferred new day and time and we'll update your request.",
+        "keywords": ["reschedule", "change time", "postpone"]
+      }
+    ]
+  }
+}
