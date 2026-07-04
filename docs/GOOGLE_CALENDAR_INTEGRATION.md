@@ -32,6 +32,20 @@
 > that `bookSlot` exists alongside `listAvailableSlots`, `lib/scheduling/googleCalendarProvider.ts`
 > implements it and `lib/scheduling/index.ts` exposes `getSchedulingProvider(clinicId)`.
 >
+> Phase 5 implementation notes (2026-07-04) — `working_hours`/`slot_duration_minutes`/`timezone`
+> moved from `clinic_google_accounts` to `clinics` (`opening_hours` on the clinic profile; see
+> `0005_clinic_opening_hours.sql`). Bug this fixes: the clinic profile (`maps_url`, freeform
+> `timings` text — what the receptionist tells patients) and `clinic_google_accounts.working_hours`
+> (what actually generated bookable slots) were two disconnected facts; a clinic could have a
+> fully filled-in profile while `working_hours` silently sat at its empty `{}` default, so the
+> AI would state hours the booking engine had no awareness of and could never produce a slot
+> for. Hours now live in one place on the clinic profile; `lib/knowledge/loader.ts` derives the
+> patient-facing "Timings" line from `opening_hours` via `formatOpeningHours()` (falling back to
+> the legacy `timings` text only if `opening_hours` is still unset), and
+> `lib/scheduling/listAvailableSlots.ts` reads the same `opening_hours` to generate slots —
+> returning `null` (legacy fallback) if it's empty, the same way an unconnected Google account
+> is treated, instead of silently offering zero slots forever.
+>
 > **One real bug found and fixed during Phase 3 testing**, worth recording: `listAvailableSlots`
 > originally filtered only against Google Calendar's `freebusy.query` result. A live concurrent
 > double-booking test (two simultaneous requests for the same slot) showed the losing request's
@@ -125,7 +139,14 @@ Two new tables, one column addition. Everything else (`appointment_requests`,
 `clinic_doctors`, etc.) is untouched — the legacy free-text request flow keeps working exactly
 as it does today for any clinic without a connected calendar.
 
-### `clinic_google_accounts` — one row per clinic, holds OAuth + scheduling config
+### `clinic_google_accounts` — one row per clinic, holds the OAuth connection
+
+> **Current schema (as of Phase 5, `0005_clinic_opening_hours.sql`):** `working_hours` /
+> `slot_duration_minutes` / `timezone` no longer live here — they live on `clinics.opening_hours`
+> / `clinics.slot_duration_minutes` / `clinics.timezone` instead, as the single source of truth
+> shared with the AI receptionist's stated hours. See the Phase 5 note above and the
+> `clinics.opening_hours` section below. The snippet below is kept for OAuth-connection-field
+> history only.
 
 ```sql
 create table clinic_google_accounts (
@@ -137,9 +158,6 @@ create table clinic_google_accounts (
   refresh_token          text not null,      -- encrypted at rest, see §8
   token_expiry           timestamptz not null,
   scope                  text not null,
-  working_hours          jsonb not null default '{}'::jsonb,   -- {"mon":[["10:00","19:00"]], ...}
-  slot_duration_minutes  int not null default 30,
-  timezone               text not null default 'Asia/Kolkata',
   sync_status            text not null default 'connected'
                            check (sync_status in ('connected', 'error', 'disconnected')),
   last_sync_error        text,
@@ -151,12 +169,28 @@ alter table clinic_google_accounts enable row level security;
 -- no policies, same deny-by-default / service-role-key-only pattern as every other table.
 ```
 
-Working hours and slot length live here rather than on `clinic_doctors`, because the calendar
-is 1:1 with the *clinic* for the MVP (per the locked decision), and `clinic_doctors` today has
-no strong relational identity elsewhere (`appointment_requests.preferred_doctor` is free text).
-If a clinic later needs per-doctor calendars, this table gains a `doctor_id` FK and the unique
-constraint moves from `clinic_id` to `(clinic_id, doctor_id)` — noted here as the seam for that
-future change, not built now.
+### `clinics.opening_hours` — single source of truth for the clinic's real hours
+
+```sql
+alter table clinics
+  add column opening_hours          jsonb not null default '{}'::jsonb,  -- {"mon":[["10:00","19:00"]], ...}
+  add column slot_duration_minutes  int not null default 30,
+  add column timezone               text not null default 'Asia/Kolkata';
+```
+
+Lives on `clinics` (alongside `maps_url`, `timings`, `address`) rather than
+`clinic_google_accounts`, because hours are a fact about the *clinic*, independent of which
+Google account happens to be connected right now — reconnecting/replacing the Google account
+must never wipe out configured hours. `lib/knowledge/loader.ts` renders the patient-facing
+"Timings" text from this value, and `lib/scheduling/listAvailableSlots.ts` reads it to generate
+bookable slots — one edit here updates both.
+
+Working hours and slot length are still keyed at the clinic level rather than per-doctor,
+because the calendar is 1:1 with the *clinic* for the MVP (per the locked decision), and
+`clinic_doctors` today has no strong relational identity elsewhere
+(`appointment_requests.preferred_doctor` is free text). If a clinic later needs per-doctor
+calendars, this becomes a per-doctor-calendar table with a `doctor_id` FK — noted here as the
+seam for that future change, not built now.
 
 ### `appointments` — confirmed, calendar-backed bookings (new; separate from `appointment_requests`)
 

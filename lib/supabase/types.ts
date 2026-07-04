@@ -21,6 +21,10 @@ export interface ClinicRow {
   cancellation_policy: string | null;
   rescheduling_policy: string | null;
   auto_confirm_enabled: boolean;
+  /** Single source of truth for the clinic's real hours — drives both the AI's stated hours and Google Calendar slot generation. Empty ({}) means "not configured yet." */
+  opening_hours: WorkingHours;
+  slot_duration_minutes: number;
+  timezone: string;
   knowledge_version: number;
   created_at: string;
   updated_at: string;
@@ -131,9 +135,6 @@ export interface ClinicGoogleAccountRow {
   refresh_token: string;
   token_expiry: string;
   scope: string;
-  working_hours: WorkingHours;
-  slot_duration_minutes: number;
-  timezone: string;
   sync_status: ClinicGoogleAccountSyncStatus;
   last_sync_error: string | null;
   connected_at: string;

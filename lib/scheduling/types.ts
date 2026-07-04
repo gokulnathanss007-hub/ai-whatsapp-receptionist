@@ -33,6 +33,12 @@ export type BookSlotResult =
  * a specific provider's API client. See /docs/GOOGLE_CALENDAR_INTEGRATION.md §5.
  */
 export interface SchedulingProvider {
-  listAvailableSlots(params?: { daysAhead?: number }): Promise<SchedulingSlot[]>;
+  /**
+   * `requestHint` is raw text that may state a specific date/time (e.g. the
+   * patient's current message). When it resolves to a real target, the
+   * exact requested slot is checked first — see
+   * /docs/GOOGLE_CALENDAR_INTEGRATION.md §6/§7.
+   */
+  listAvailableSlots(params?: { daysAhead?: number; requestHint?: string }): Promise<SchedulingSlot[]>;
   bookSlot(params: BookSlotParams): Promise<BookSlotResult>;
 }

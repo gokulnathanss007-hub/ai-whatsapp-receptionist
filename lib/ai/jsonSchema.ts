@@ -99,6 +99,7 @@ export const AI_OUTPUT_JSON_SCHEMA = {
       collected: collectedSlotsJsonSchema,
       appointment_request: appointmentRequestJsonSchema,
       booking_selection: bookingSelectionJsonSchema,
+      presenting_slots: { type: "boolean" },
       human_handoff: { type: "boolean" },
       handoff_reason: {
         anyOf: [{ type: "string", enum: [...HANDOFF_REASONS] }, { type: "null" }],
@@ -110,6 +111,7 @@ export const AI_OUTPUT_JSON_SCHEMA = {
       "collected",
       "appointment_request",
       "booking_selection",
+      "presenting_slots",
       "human_handoff",
       "handoff_reason",
     ],

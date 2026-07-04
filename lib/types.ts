@@ -132,6 +132,13 @@ export const aiOutputSchema = z.object({
   collected: collectedSlotsSchema.default({}),
   appointment_request: appointmentRequestPayloadSchema.nullable(),
   booking_selection: bookingSelectionSchema.nullable(),
+  // True whenever `reply` is presenting the patient a list of available
+  // times. The model has, in production, fabricated an entire fake slot
+  // list (including a past time and a day the clinic is closed) rather than
+  // faithfully relaying <available_slots> — this flag lets the pipeline
+  // discard whatever list the model wrote and always render the real one
+  // from actual data instead. See /docs/GOOGLE_CALENDAR_INTEGRATION.md §6.
+  presenting_slots: z.boolean(),
   human_handoff: z.boolean(),
   handoff_reason: z.enum(HANDOFF_REASONS).nullable(),
 });

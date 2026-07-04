@@ -3,6 +3,7 @@ import { getValidGoogleClient } from "@/lib/google/tokenManager";
 import { listAvailableSlots } from "@/lib/scheduling/listAvailableSlots";
 import type { BookSlotParams, BookSlotResult } from "@/lib/scheduling/types";
 import {
+  getClinic,
   getClinicGoogleAccount,
   insertAppointment,
   markAppointmentSyncFailed,
@@ -33,6 +34,11 @@ export async function bookSlot(
     return { ok: false, reason: "provider_unavailable", alternatives: [] };
   }
 
+  const clinic = await getClinic(clinicId);
+  if (!clinic) {
+    return { ok: false, reason: "provider_unavailable", alternatives: [] };
+  }
+
   const freshSlots = await listAvailableSlots({ clinicId });
   const matched = freshSlots?.find((slot) => slot.id === params.slotId);
   if (!matched) {
@@ -51,7 +57,7 @@ export async function bookSlot(
       reason: params.reason,
       slotStart: matched.startsAt,
       slotEnd: matched.endsAt,
-      timezone: account.timezone,
+      timezone: clinic.timezone,
     });
     appointmentId = appointment.id;
   } catch (err) {

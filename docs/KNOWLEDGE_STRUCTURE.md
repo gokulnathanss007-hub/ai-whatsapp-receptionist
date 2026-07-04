@@ -11,6 +11,10 @@ This document defines what a clinic's knowledge is, how it's stored, and how it 
 ## 1. What a clinic's knowledge contains
 
 1. **Clinic profile** — name, city, address, Google Maps link, timings, parking, languages.
+   `opening_hours` is the single structured source of truth for the clinic's real open/close
+   times: the AI receptionist's stated "Timings" (`lib/knowledge/loader.ts`) and the actual
+   bookable Google Calendar slots (`lib/scheduling/listAvailableSlots.ts`) both read this same
+   field, so they can never drift out of sync — see `docs/GOOGLE_CALENDAR_INTEGRATION.md` §3.
 2. **Doctors** — names and roles (as the receptionist may reference them).
 3. **Services** — the treatments this clinic offers (subset of the master list) with a
    high-level, non-clinical description each.
@@ -34,7 +38,10 @@ clinics
   city
   address
   maps_url
-  timings              -- e.g. "Mon-Sat 10:00-20:00; Sun closed"
+  timings              -- freeform display fallback, e.g. "Mon-Sat 10:00-20:00; Sun closed"
+  opening_hours        -- jsonb, single source of truth: {"mon":[["10:00","20:00"]], ...}
+  slot_duration_minutes -- int, default 30
+  timezone             -- text, default "Asia/Kolkata"
   parking_info
   languages            -- ["en"] for MVP
   consultation_fee     -- numeric

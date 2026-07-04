@@ -11,6 +11,7 @@ import {
   clinicServiceSchema,
   type ClinicKnowledge,
 } from "@/lib/knowledge/types";
+import { formatOpeningHours } from "@/lib/scheduling/formatOpeningHours";
 
 /**
  * Loads a clinic's full knowledge (profile, doctors, services, FAQs) from
@@ -46,7 +47,14 @@ export function renderClinicKnowledgeBlock(knowledge: ClinicKnowledge): string {
   lines.push(`Clinic: ${profile.name}${profile.city ? ` (${profile.city})` : ""}`);
   if (profile.address) lines.push(`Address: ${profile.address}`);
   if (profile.maps_url) lines.push(`Maps: ${profile.maps_url}`);
-  if (profile.timings) lines.push(`Timings: ${profile.timings}`);
+  // opening_hours is the single source of truth also used to generate
+  // bookable Google Calendar slots (see lib/scheduling/listAvailableSlots.ts)
+  // — deriving the stated timings from it means the receptionist can never
+  // quote hours the booking engine doesn't actually honor. Falls back to the
+  // freeform `timings` text only for clinics with no structured hours set.
+  const derivedTimings = formatOpeningHours(profile.opening_hours);
+  const timingsText = derivedTimings ?? profile.timings;
+  if (timingsText) lines.push(`Timings: ${timingsText}`);
   if (profile.parking_info) lines.push(`Parking: ${profile.parking_info}`);
   lines.push(`Languages: ${profile.languages.join(", ") || "English"}.`);
   if (profile.consultation_fee !== null) {

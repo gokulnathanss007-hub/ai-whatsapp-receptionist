@@ -1,4 +1,5 @@
 import { logger, task } from "@trigger.dev/sdk";
+import type { DateTime } from "luxon";
 import { buildMessages, renderCollectedInfoBlock } from "@/lib/ai/promptBuilder";
 import { generateReceptionistReply } from "@/lib/ai/openaiClient";
 import { AiOutputParseError, parseAiOutput } from "@/lib/ai/outputParser";
@@ -7,8 +8,16 @@ import { nextConversationStage } from "@/lib/ai/conversationStage";
 import { mergeCollectedSlots } from "@/lib/ai/mergeSlots";
 import { loadClinicKnowledge, renderClinicKnowledgeBlock } from "@/lib/knowledge/loader";
 import { getSchedulingProvider } from "@/lib/scheduling";
-import { renderAvailableSlotsBlock, renderSlotConflictReply } from "@/lib/scheduling/renderSlotsBlock";
+import {
+  renderAvailableSlotsBlock,
+  renderBookingConfirmation,
+  renderRequestedSlotUnavailable,
+  renderSlotConflictReply,
+  renderSlotsPresentation,
+} from "@/lib/scheduling/renderSlotsBlock";
+import { formatRequestedLabel, resolveRequestedDateTime } from "@/lib/scheduling/requestedDateTime";
 import type { SchedulingSlot } from "@/lib/scheduling/types";
+import { extractTimeMentions, slotMatchesTimeMention } from "@/lib/scheduling/timeMatch";
 import {
   getOrCreateOpenConversation,
   getOrCreatePatient,
@@ -33,6 +42,15 @@ export interface ReplyPipelinePayload {
 
 const HISTORY_LIMIT = 12;
 
+// Deliberately broad: catches any phrasing that claims a booking is already
+// done ("✅ confirmed", "is booked", "all set", "has been scheduled", ...).
+// A narrow "confirmed|✅"-only version was bypassed in production by the
+// model instead writing "All set ... is booked ... will confirm shortly" —
+// same false-completion claim, different words. Broaden this further if a
+// new phrasing slips through again rather than special-casing each one.
+const CLAIMS_COMPLETION_PATTERN =
+  /✅|\ball set\b|\b(?:is|has been|you'?re)\s+(?:booked|confirmed|scheduled|set)\b/i;
+
 // Fail-closed fallback per /docs/AI_RECEPTIONIST_SPEC.md §12: any generation
 // or parse error becomes a handoff, never an unreviewed guess.
 function fallbackHandoffOutput(): AiOutput {
@@ -42,6 +60,7 @@ function fallbackHandoffOutput(): AiOutput {
     collected: {},
     appointment_request: null,
     booking_selection: null,
+    presenting_slots: false,
     human_handoff: true,
     handoff_reason: "unknown",
   };
@@ -65,6 +84,10 @@ async function insertInboundMessage(conversationId: string, payload: ReplyPipeli
 
 export const replyPipelineTask = task({
   id: "whatsapp-reply-pipeline",
+  // googleapis (used by lib/scheduling/lib/google) is memory-heavy — the
+  // default "micro" machine OOM-killed this task in production once the
+  // Google Calendar integration was wired in. small-2x gives real headroom.
+  machine: "small-2x",
   run: async (payload: ReplyPipelinePayload) => {
     const t0 = Date.now();
     const elapsed = () => Date.now() - t0;
@@ -100,16 +123,44 @@ export const replyPipelineTask = task({
     // null if no calendar is connected/working, which naturally falls back
     // to the legacy free-text flow below — see
     // /docs/GOOGLE_CALENDAR_INTEGRATION.md §2, §6, §10.
+    //
+    // requestedTarget resolves the patient's CURRENT message into an exact
+    // date/time when unambiguous ("today"/"tomorrow" + a clear AM/PM time).
+    // Production bug this fixes: listAvailableSlots used to always return
+    // the chronologically-earliest slots with zero awareness of what was
+    // actually requested, so "tomorrow 5pm" could be silently resolved
+    // against today's earliest slots instead. See
+    // /docs/GOOGLE_CALENDAR_INTEGRATION.md §6/§7.
     let availableSlots: SchedulingSlot[] | null = null;
+    let requestedTarget: DateTime | null = null;
+    let clinicTimezone: string | null = null;
     if (conversation.stage === "booking" && knowledge.profile.auto_confirm_enabled) {
       const provider = await getSchedulingProvider(clinicId);
       if (provider) {
-        availableSlots = await provider.listAvailableSlots();
+        availableSlots = await provider.listAvailableSlots({ requestHint: payload.body });
         logger.info("Loaded available slots", { count: availableSlots.length, ms: elapsed() });
+
+        clinicTimezone = knowledge.profile.timezone;
+        requestedTarget = resolveRequestedDateTime({
+          text: payload.body,
+          timezone: knowledge.profile.timezone,
+          now: new Date(),
+        });
       }
     }
     const availableSlotsBlock =
       availableSlots !== null ? renderAvailableSlotsBlock(availableSlots) : undefined;
+
+    // Requirement: debug logging showing requested date/time, parsed
+    // datetime, and the slots actually returned — see
+    // /docs/GOOGLE_CALENDAR_INTEGRATION.md §6/§7/§8.
+    logger.info("Booking request diagnostics", {
+      patientMessage: payload.body,
+      collectedPreferredDate: (conversation.collected_slots as CollectedSlots | undefined)?.preferred_date ?? null,
+      collectedPreferredTime: (conversation.collected_slots as CollectedSlots | undefined)?.preferred_time ?? null,
+      parsedTargetDateTime: requestedTarget?.toISO() ?? null,
+      availableSlotsReturned: availableSlots?.map((s) => ({ id: s.id, label: s.label, startsAt: s.startsAt })) ?? null,
+    });
 
     // Rendered from persisted collected_slots (pre-this-turn), not just raw
     // history — durable memory of what's already been asked/answered, even
@@ -179,8 +230,86 @@ export const replyPipelineTask = task({
     let finalHandoffReason: HandoffReason | null = output.handoff_reason;
     let bookingSucceeded = false;
 
+    // Prompt-level guardrail backed up in code: observed in production —
+    // the model fabricated an entire fake slot list (a past time, and times
+    // on a day the clinic is closed) instead of faithfully relaying
+    // <available_slots>. The model's own free-text slot list can never be
+    // trusted; whenever it signals it's presenting times, replace its reply
+    // with a deterministic rendering of the real data. See
+    // /docs/GOOGLE_CALENDAR_INTEGRATION.md §6.
+    if (output.presenting_slots) {
+      if (availableSlots !== null) {
+        // If the patient asked for a specific date/time, say so explicitly
+        // when it's not exactly available, rather than a generic "here's
+        // what's open" — matches the "requested slot unavailable" framing
+        // required per /docs/GOOGLE_CALENDAR_INTEGRATION.md §6/§7.
+        const exactMatchShown =
+          requestedTarget !== null &&
+          availableSlots.some((slot) => slot.startsAt === requestedTarget!.toUTC().toISO());
+        if (requestedTarget && clinicTimezone && !exactMatchShown) {
+          finalReply = renderRequestedSlotUnavailable(
+            formatRequestedLabel(requestedTarget, clinicTimezone, new Date()),
+            availableSlots,
+          );
+        } else {
+          finalReply = renderSlotsPresentation(availableSlots, knowledge.doctors[0]?.name);
+        }
+      } else {
+        logger.error("Model set presenting_slots with no real availability data given", {
+          reply: output.reply,
+        });
+        finalReply = "Let me check our calendar and get back to you with the available times shortly.";
+      }
+    } else if (
+      // Prompt-level guardrail backed up in code: observed in production
+      // testing (twice, with two different phrasings — "✅ ... confirmed"
+      // and later "All set ... is booked ... will confirm shortly") that the
+      // model can claim success while leaving booking_selection null,
+      // meaning bookSlot() is never called and nothing is actually booked.
+      // CLAIMS_COMPLETION_PATTERN must stay broad — narrow wording checks
+      // keep getting bypassed by a different phrasing of the same claim.
+      !output.booking_selection &&
+      !output.appointment_request &&
+      availableSlotsBlock !== undefined &&
+      CLAIMS_COMPLETION_PATTERN.test(output.reply)
+    ) {
+      logger.error("Model claimed a completed booking with no booking_selection to back it", {
+        reply: output.reply,
+      });
+      finalReply =
+        "Sorry, let me just double-check that slot before confirming — could you tell me again which time from the list you'd like?";
+    }
+
     if (output.booking_selection && !finalHumanHandoff) {
+      const bookingSelection = output.booking_selection;
       const provider = await getSchedulingProvider(clinicId);
+
+      const candidateSlot = availableSlots?.find(
+        (slot) => slot.id === bookingSelection.selected_slot_id,
+      );
+
+      // Requirement: requested_slot must equal selected_slot before any
+      // booking is attempted. Full day+time precision when we resolved a
+      // specific target this turn; falls back to time-of-day-only when the
+      // date was ambiguous (e.g. weekday names we don't parse). Either way,
+      // a mismatch aborts the booking — it is never silently overridden to
+      // "the first/nearest available slot".
+      let mismatch = false;
+      if (candidateSlot && requestedTarget) {
+        mismatch = candidateSlot.startsAt !== requestedTarget.toUTC().toISO();
+      } else if (candidateSlot) {
+        const mentionedTimes = extractTimeMentions(payload.body);
+        mismatch = mentionedTimes.length > 0 && !slotMatchesTimeMention(candidateSlot, mentionedTimes);
+      }
+
+      logger.info("Booking selection validation", {
+        requestedTargetIso: requestedTarget?.toUTC().toISO() ?? null,
+        selectedSlotId: bookingSelection.selected_slot_id,
+        candidateSlotLabel: candidateSlot?.label ?? null,
+        candidateSlotStart: candidateSlot?.startsAt ?? null,
+        mismatch,
+      });
+
       if (!provider) {
         // Was connected when slots were offered, disconnected since — fail
         // closed rather than send an unconfirmed "booked!" message.
@@ -188,20 +317,66 @@ export const replyPipelineTask = task({
         finalHandoffReason = "unknown";
         finalReply = "I'll connect you with our clinic staff to confirm this appointment.";
         logger.error("Scheduling provider unavailable at booking time", { clinicId });
+      } else if (mismatch) {
+        // Observed in production: the model resolved a patient's clearly
+        // stated date/time (e.g. "tomorrow 5pm") to the WRONG id from
+        // <available_slots> (e.g. "today 11am"'s id) — despite the correct
+        // slot being available. Abort the booking; never substitute a
+        // different slot. Re-show the real current options instead.
+        logger.error("booking_selection mismatch — aborting booking, re-presenting slots instead", {
+          requestedTargetIso: requestedTarget?.toUTC().toISO() ?? null,
+          candidateLabel: candidateSlot?.label,
+          body: payload.body,
+        });
+        finalReply =
+          requestedTarget && clinicTimezone
+            ? renderRequestedSlotUnavailable(
+                formatRequestedLabel(requestedTarget, clinicTimezone, new Date()),
+                availableSlots ?? [],
+              )
+            : renderSlotsPresentation(availableSlots ?? [], knowledge.doctors[0]?.name);
       } else {
         const bookingResult = await provider.bookSlot({
-          slotId: output.booking_selection.selected_slot_id,
+          slotId: bookingSelection.selected_slot_id,
           patientId: patient.id,
           conversationId: conversation.id,
-          name: output.booking_selection.name,
+          name: bookingSelection.name,
           mobile: patient.wa_phone,
-          reason: output.booking_selection.reason,
+          reason: bookingSelection.reason,
         });
         if (bookingResult.ok) {
           bookingSucceeded = true;
+          // Never trust the model's own free-text date/time claim — always
+          // state the real, verified slot so a wrong-slot-id mismatch is
+          // immediately visible to the patient instead of silently wrong.
+          finalReply = renderBookingConfirmation({
+            slot: bookingResult.slot,
+            clinicName: knowledge.profile.name,
+            doctorName: knowledge.doctors[0]?.name,
+          });
+          // Defense-in-depth audit log per requirement 7/8 — the mismatch
+          // guard above should make this branch unreachable in practice
+          // (booking is aborted before this point on a mismatch), but this
+          // is the last line of defense and the full debug trail requested:
+          // requested date/time, parsed target, selected slot, and the
+          // final Calendar event start/end that was actually created.
+          if (requestedTarget && bookingResult.slot.startsAt !== requestedTarget.toUTC().toISO()) {
+            logger.error("CRITICAL: booked slot does not match requested date/time", {
+              requestedTargetIso: requestedTarget.toUTC().toISO(),
+              bookedSlotStart: bookingResult.slot.startsAt,
+              bookedSlotEnd: bookingResult.slot.endsAt,
+            });
+          }
           logger.info("Booking succeeded", {
+            requestedTargetIso: requestedTarget?.toUTC().toISO() ?? null,
+            collectedPreferredDate:
+              (conversation.collected_slots as CollectedSlots | undefined)?.preferred_date ?? null,
+            collectedPreferredTime:
+              (conversation.collected_slots as CollectedSlots | undefined)?.preferred_time ?? null,
             appointmentId: bookingResult.appointmentId,
             calendarSynced: bookingResult.calendarSynced,
+            finalCalendarStart: bookingResult.slot.startsAt,
+            finalCalendarEnd: bookingResult.slot.endsAt,
           });
         } else {
           finalReply = renderSlotConflictReply(bookingResult.alternatives);

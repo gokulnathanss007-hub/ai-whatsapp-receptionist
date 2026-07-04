@@ -10,8 +10,12 @@ import type {
 export class GoogleCalendarProvider implements SchedulingProvider {
   constructor(private readonly clinicId: string) {}
 
-  async listAvailableSlots(params?: { daysAhead?: number }): Promise<SchedulingSlot[]> {
-    const slots = await listAvailableSlots({ clinicId: this.clinicId, daysAhead: params?.daysAhead });
+  async listAvailableSlots(params?: { daysAhead?: number; requestHint?: string }): Promise<SchedulingSlot[]> {
+    const slots = await listAvailableSlots({
+      clinicId: this.clinicId,
+      daysAhead: params?.daysAhead,
+      requestHint: params?.requestHint,
+    });
     return slots ?? [];
   }
 

@@ -4,6 +4,19 @@ import { z } from "zod";
 // block — the block is trusted input to the model, so malformed clinic data
 // must fail loudly here rather than reach the prompt.
 
+const weekdayHoursSchema = z.array(z.tuple([z.string(), z.string()]));
+
+/** Mirrors lib/supabase/types.ts WorkingHours — the clinic's single source of truth for hours. */
+export const openingHoursSchema = z.object({
+  mon: weekdayHoursSchema.optional(),
+  tue: weekdayHoursSchema.optional(),
+  wed: weekdayHoursSchema.optional(),
+  thu: weekdayHoursSchema.optional(),
+  fri: weekdayHoursSchema.optional(),
+  sat: weekdayHoursSchema.optional(),
+  sun: weekdayHoursSchema.optional(),
+});
+
 export const clinicProfileSchema = z.object({
   id: z.string(),
   name: z.string().min(1),
@@ -19,6 +32,9 @@ export const clinicProfileSchema = z.object({
   cancellation_policy: z.string().nullable(),
   rescheduling_policy: z.string().nullable(),
   auto_confirm_enabled: z.boolean(),
+  opening_hours: openingHoursSchema,
+  slot_duration_minutes: z.number().int(),
+  timezone: z.string(),
   knowledge_version: z.number().int(),
 });
 export type ClinicProfile = z.infer<typeof clinicProfileSchema>;
