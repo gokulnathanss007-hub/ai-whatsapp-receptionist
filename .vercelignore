@@ -1,0 +1,8 @@
+node_modules
+.next
+.trigger
+.git
+.env
+.env.local
+*.tsbuildinfo
+.claude
