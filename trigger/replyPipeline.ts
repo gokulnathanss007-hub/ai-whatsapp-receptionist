@@ -3,7 +3,7 @@ import type { DateTime } from "luxon";
 import { buildMessages, renderCollectedInfoBlock } from "@/lib/ai/promptBuilder";
 import { generateReceptionistReply } from "@/lib/ai/openaiClient";
 import { AiOutputParseError, parseAiOutput } from "@/lib/ai/outputParser";
-import { applySafetyOverride } from "@/lib/ai/safetyOverride";
+import { applySafetyOverride, detectSafetyOverride } from "@/lib/ai/safetyOverride";
 import { nextConversationStage } from "@/lib/ai/conversationStage";
 import { mergeCollectedSlots } from "@/lib/ai/mergeSlots";
 import { BOOKING_IN_PROGRESS_TIMEOUT_MS, transitionBookingStatus } from "@/lib/ai/bookingStatus";
@@ -297,13 +297,46 @@ export const replyPipelineTask = task({
 
     let output: AiOutput;
     try {
-      const raw = await generateReceptionistReply(messages);
-      output = parseAiOutput(raw);
+      try {
+        const raw = await generateReceptionistReply(messages);
+        output = parseAiOutput(raw);
+      } catch (error) {
+        // A malformed output is usually one-off model noise, not a prompt
+        // bug — regenerate once before treating it as a real failure.
+        // (generateReceptionistReply already retries transient HTTP errors
+        // internally; this extra pass covers parse-level failures.)
+        if (!(error instanceof AiOutputParseError)) throw error;
+        logger.error("AI output failed to parse — regenerating once", { error: error.message });
+        const raw = await generateReceptionistReply(messages);
+        output = parseAiOutput(raw);
+      }
     } catch (error) {
-      logger.error("Reply generation/parse failed — failing closed to handoff", {
+      logger.error("Reply generation/parse failed after retries", {
         error: error instanceof AiOutputParseError ? error.message : String(error),
       });
-      output = fallbackHandoffOutput();
+      // Production incident ("Monday 10am"): a transient failure here used
+      // to fail closed to "staff will help you soon" even though the
+      // pipeline had ALREADY verified the exact requested slot was free —
+      // ejecting a mid-booking patient for no patient-visible reason. When
+      // we hold real availability data and the message trips no safety
+      // pattern, degrade to deterministically presenting the real slots
+      // (zero model involvement, nothing invented) instead of handing off.
+      // Safety-flagged or data-less turns still fail closed to staff.
+      if (!detectSafetyOverride(payload.body) && availableSlots !== null && availableSlots.length > 0) {
+        logger.info("Degrading to deterministic slot presentation instead of handoff");
+        output = {
+          reply: "Here are the open times:",
+          intent: "book_appointment",
+          collected: {},
+          appointment_request: null,
+          booking_selection: null,
+          presenting_slots: true,
+          human_handoff: false,
+          handoff_reason: null,
+        };
+      } else {
+        output = fallbackHandoffOutput();
+      }
     }
     logger.info("Generated AI reply", { ms: elapsed() });
 
