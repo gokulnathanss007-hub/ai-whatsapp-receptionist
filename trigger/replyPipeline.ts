@@ -322,7 +322,11 @@ export const replyPipelineTask = task({
       // pattern, degrade to deterministically presenting the real slots
       // (zero model involvement, nothing invented) instead of handing off.
       // Safety-flagged or data-less turns still fail closed to staff.
-      if (!detectSafetyOverride(payload.body) && availableSlots !== null && availableSlots.length > 0) {
+      if (detectSafetyOverride(payload.body)) {
+        // Safety-flagged content with no reviewed reply available — the only
+        // correct move is a real human.
+        output = fallbackHandoffOutput();
+      } else if (availableSlots !== null && availableSlots.length > 0) {
         logger.info("Degrading to deterministic slot presentation instead of handoff");
         output = {
           reply: "Here are the open times:",
@@ -335,7 +339,21 @@ export const replyPipelineTask = task({
           handoff_reason: null,
         };
       } else {
-        output = fallbackHandoffOutput();
+        // Transient failure on an ordinary message — ask the patient to
+        // repeat rather than escalate. Staff are never pulled into normal
+        // FAQ/booking traffic; a human handoff needs an explicit request or
+        // a safety signal, not an HTTP hiccup.
+        logger.info("Degrading to a re-ask instead of handoff (no safety signal)");
+        output = {
+          reply: "Sorry, I didn't catch that. Could you type it once more?",
+          intent: "unknown",
+          collected: {},
+          appointment_request: null,
+          booking_selection: null,
+          presenting_slots: false,
+          human_handoff: false,
+          handoff_reason: null,
+        };
       }
     }
     logger.info("Generated AI reply", { ms: elapsed() });
