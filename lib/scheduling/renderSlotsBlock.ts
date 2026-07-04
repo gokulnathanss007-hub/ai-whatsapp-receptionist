@@ -31,6 +31,21 @@ export function renderSlotConflictReply(alternatives: SchedulingSlot[]): string 
 }
 
 /**
+ * For slot_unavailable (stale/unverifiable selection) — NOT for a lost
+ * booking race. Production incident: a patient was told "that time was just
+ * taken" when nothing was ever taken (the model had garbled the slot id) —
+ * and the "alternatives" even listed the same time as still open. Never
+ * claim someone took the slot unless a real insert conflict said so.
+ */
+export function renderSlotNotOpenReply(alternatives: SchedulingSlot[]): string {
+  if (alternatives.length === 0) {
+    return "Sorry, I could not get that time, and no other times are open right now. Our staff will message you soon with new times.";
+  }
+  const lines = alternatives.map((slot) => `• ${slot.label}`).join("\n");
+  return `Sorry, I could not get that time.\n\nHere are the current open times:\n\n${lines}\n\nWhich time works for you?`;
+}
+
+/**
  * Deterministic confirmation reply for a successful booking — built directly
  * from the actually-booked slot, never from the model's own free-text claim.
  * A model that resolves the wrong id from <available_slots> (e.g. losing

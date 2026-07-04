@@ -14,8 +14,10 @@ import {
   renderBookingConfirmation,
   renderRequestedSlotUnavailable,
   renderSlotConflictReply,
+  renderSlotNotOpenReply,
   renderSlotsPresentation,
 } from "@/lib/scheduling/renderSlotsBlock";
+import { resolveSelectedSlot } from "@/lib/scheduling/recoverSelectedSlot";
 import { formatRequestedLabel, resolveRequestedDateTime } from "@/lib/scheduling/requestedDateTime";
 import type { SchedulingSlot } from "@/lib/scheduling/types";
 import { extractTimeMentions, slotMatchesTimeMention } from "@/lib/scheduling/timeMatch";
@@ -434,9 +436,28 @@ export const replyPipelineTask = task({
       const bookingSelection = output.booking_selection;
       const provider = await getSchedulingProvider(clinicId);
 
-      const candidateSlot = availableSlots?.find(
-        (slot) => slot.id === bookingSelection.selected_slot_id,
-      );
+      // Production incident (2026-07-04, "Today 7.pm"): the parser resolved
+      // the time perfectly and the exact slot was free, but the model echoed
+      // a corrupted slot id — the old direct id lookup found nothing,
+      // bookSlot was called with garbage, and the patient was told the time
+      // was "just taken" when it never was. resolveSelectedSlot recovers
+      // deterministically from the PATIENT'S own stated time when it
+      // identifies exactly one offered slot; anything ambiguous stays
+      // unresolved and is re-presented, never guessed.
+      const resolution = resolveSelectedSlot({
+        selectedSlotId: bookingSelection.selected_slot_id,
+        availableSlots: availableSlots ?? [],
+        requestedTargetUtcIso: requestedTarget?.toUTC().toISO() ?? null,
+        messageText: payload.body,
+      });
+      const candidateSlot = resolution.kind === "unresolved" ? undefined : resolution.slot;
+      if (resolution.kind === "recovered") {
+        logger.error("Model echoed an unknown slot id — recovered from the patient's stated time", {
+          modelSlotId: bookingSelection.selected_slot_id,
+          recoveredSlotId: resolution.slot.id,
+          recoveredLabel: resolution.slot.label,
+        });
+      }
 
       // Requirement: requested_slot must equal selected_slot before any
       // booking is attempted. Full day+time precision when we resolved a
@@ -455,6 +476,7 @@ export const replyPipelineTask = task({
       logger.info("Booking selection validation", {
         requestedTargetIso: requestedTarget?.toUTC().toISO() ?? null,
         selectedSlotId: bookingSelection.selected_slot_id,
+        resolution: resolution.kind,
         candidateSlotLabel: candidateSlot?.label ?? null,
         candidateSlotStart: candidateSlot?.startsAt ?? null,
         mismatch,
@@ -473,6 +495,16 @@ export const replyPipelineTask = task({
         finalReply = "Our clinic staff will confirm this appointment for you. They will message you soon.";
         logger.error("Scheduling provider unavailable at booking time", { clinicId });
         logger.info("Booking Completed", { conversationId: conversation.id, outcome: "failed", reason: "provider_unavailable" });
+      } else if (!candidateSlot) {
+        // The model's id is unknown AND the patient's words don't identify
+        // exactly one offered slot — never call bookSlot with an id we can't
+        // verify, and never claim the time was "taken". Ask again with the
+        // real list.
+        logger.error("booking_selection id unknown and unrecoverable — re-presenting slots", {
+          modelSlotId: bookingSelection.selected_slot_id,
+          body: payload.body,
+        });
+        finalReply = renderSlotsPresentation(availableSlots ?? [], knowledge.doctors[0]?.name);
       } else if (mismatch) {
         // Observed in production: the model resolved a patient's clearly
         // stated date/time (e.g. "tomorrow 5pm") to the WRONG id from
@@ -526,8 +558,11 @@ export const replyPipelineTask = task({
             selectedSlotId: bookingSelection.selected_slot_id,
           });
 
+          // candidateSlot.id, not the model's raw echo — identical in the
+          // normal case, and the verified recovered id when the model
+          // garbled its echo (see resolveSelectedSlot above).
           const bookingResult = await provider.bookSlot({
-            slotId: bookingSelection.selected_slot_id,
+            slotId: candidateSlot.id,
             patientId: patient.id,
             conversationId: conversation.id,
             name: bookingSelection.name,
@@ -573,7 +608,15 @@ export const replyPipelineTask = task({
             logger.info("Booking Completed", { conversationId: conversation.id, outcome: "confirmed" });
           } else {
             currentBookingStatus = transitionBookingStatus(currentBookingStatus, "failed");
-            finalReply = renderSlotConflictReply(bookingResult.alternatives);
+            // "Just taken" ONLY when a real insert conflict proved someone
+            // else got it (slot_taken). Any other failure must not accuse a
+            // phantom patient of taking the slot — production incident: a
+            // stale-selection failure was worded "just taken" while the
+            // alternatives list showed the same time still open.
+            finalReply =
+              bookingResult.reason === "slot_taken"
+                ? renderSlotConflictReply(bookingResult.alternatives)
+                : renderSlotNotOpenReply(bookingResult.alternatives);
             logger.info("Booking lost the race or slot was stale", { reason: bookingResult.reason });
             logger.info("Booking Completed", {
               conversationId: conversation.id,
