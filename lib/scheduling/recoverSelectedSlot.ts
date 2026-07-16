@@ -2,6 +2,7 @@ import { extractTimeMentions, slotMatchesTimeMention } from "@/lib/scheduling/ti
 import type { SchedulingSlot } from "@/lib/scheduling/types";
 
 export type SelectedSlotResolution =
+  | { kind: "tapped"; slot: SchedulingSlot }
   | { kind: "matched"; slot: SchedulingSlot }
   | { kind: "recovered"; slot: SchedulingSlot }
   | { kind: "unresolved" };
@@ -27,8 +28,17 @@ export function resolveSelectedSlot(params: {
   requestedTargetUtcIso: string | null;
   /** The patient's raw message this turn. */
   messageText: string;
+  /** interactive.list_reply.id when the patient TAPPED a slot row (V2 interactive) — the strongest signal there is: Meta echoes back the exact id we sent, no model involved. */
+  tappedSlotId?: string | null;
 }): SelectedSlotResolution {
-  const { selectedSlotId, availableSlots, requestedTargetUtcIso, messageText } = params;
+  const { selectedSlotId, availableSlots, requestedTargetUtcIso, messageText, tappedSlotId } = params;
+
+  // A tap outranks everything, including the model's echo — the patient
+  // physically selected this row and Meta returned its id verbatim.
+  if (tappedSlotId) {
+    const tapped = availableSlots.find((slot) => slot.id === tappedSlotId);
+    if (tapped) return { kind: "tapped", slot: tapped };
+  }
 
   const matched = availableSlots.find((slot) => slot.id === selectedSlotId);
   if (matched) return { kind: "matched", slot: matched };

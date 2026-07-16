@@ -53,6 +53,7 @@ export async function POST(request: Request): Promise<Response> {
         fromWaId: message.fromWaId,
         contactName: message.contactName,
         body: message.body,
+        interactiveReplyId: message.interactiveReplyId,
       };
 
       await tasks.trigger<typeof replyPipelineTask>("whatsapp-reply-pipeline", payload, {

@@ -22,6 +22,8 @@ export interface ClinicRow {
   cancellation_policy: string | null;
   rescheduling_policy: string | null;
   auto_confirm_enabled: boolean;
+  /** V2 phase 1 rollout flag: render slot offers as tappable WhatsApp list messages. Text-only clinics keep plain text. */
+  interactive_enabled: boolean;
   /** Single source of truth for the clinic's real hours — drives both the AI's stated hours and Google Calendar slot generation. Empty ({}) means "not configured yet." */
   opening_hours: WorkingHours;
   slot_duration_minutes: number;

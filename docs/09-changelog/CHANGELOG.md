@@ -6,6 +6,27 @@
 
 ---
 
+## 2026-07-16 — Interactive WhatsApp phase 1 + Decision Engine step 1 live
+
+**Contract/schema changes**
+- Migration `0009_clinic_interactive_flag.sql`: `clinics.interactive_enabled boolean`
+  (default false; enabled for the pilot clinic). Rollout flag per
+  `INTERACTIVE_WHATSAPP.md` §7.
+- Inbound webhook contract widened: `interactive.button_reply` / `interactive.list_reply`
+  payloads are parsed at the boundary into the same internal message shape as text
+  (`body` = human title, new `interactiveReplyId` = backend key). Typed messages carry
+  `interactiveReplyId: null`.
+- AI output contract **unchanged** (Decision Engine migration §6 step 1 is a pure
+  translation layer: `lib/decision-engine/` Action union + v1 translator + WhatsApp
+  channel adapter with Meta limit enforcement).
+
+**Behaviour**
+- Clinics with `interactive_enabled`: slot offers render as a tappable list message
+  (row id = slot id); a tap books deterministically — it outranks the model's id echo
+  (`resolveSelectedSlot` kind `tapped`), and a `booking_selection` is synthesized from a
+  tap if the model omits one. Text-only clinics: byte-identical behaviour to before.
+- Interactive send failures fall back to the plain-text rendering of the same turn.
+
 ## 2026-07-16 — Documentation architecture v2 (Clinic Growth System era)
 
 **Context:** Medixum AI's documentation restructured from the flat MVP set (10 docs) to

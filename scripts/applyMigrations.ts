@@ -81,6 +81,20 @@ async function main() {
     console.log("0008 applied (appointments.wa_message_id)");
   }
 
+  // 0009 — clinics.interactive_enabled (V2 interactive rollout flag)
+  if (await columnExists(client, "clinics", "interactive_enabled")) {
+    console.log("0009 already applied — skipping");
+  } else {
+    await client.query(migration("0009_clinic_interactive_flag.sql"));
+    console.log("0009 applied (clinics.interactive_enabled)");
+  }
+
+  // Pilot rollout: Glow Skin Clinic gets the interactive experience.
+  const interactive = await client.query(
+    `update clinics set interactive_enabled = true where name = 'Glow Skin Clinic' and interactive_enabled = false returning id`,
+  );
+  console.log(interactive.rowCount ? "enabled interactive_enabled for Glow Skin Clinic" : "interactive flag already set — skipped");
+
   // Seed working hours (only where still empty, so re-runs never clobber)
   const seeded = await client.query(`
     update clinics

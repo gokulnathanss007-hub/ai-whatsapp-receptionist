@@ -35,6 +35,8 @@ import {
   updateConversationAfterTurn,
 } from "@/lib/supabase/queries";
 import { sendWhatsAppTextMessage } from "@/lib/whatsapp/sendMessage";
+import { executeActionsOnWhatsApp } from "@/lib/whatsapp/channelAdapter";
+import { translateTurnToActions } from "@/lib/decision-engine/translateV1";
 import type { AiOutput, BookingStatus, CollectedSlots, ConversationStage, HandoffReason } from "@/lib/types";
 
 export interface ReplyPipelinePayload {
@@ -43,6 +45,8 @@ export interface ReplyPipelinePayload {
   fromWaId: string;
   contactName: string | null;
   body: string;
+  /** interactive.button_reply/list_reply id when the patient tapped instead of typing (V2 interactive) — e.g. the exact slot id of a tapped row. */
+  interactiveReplyId?: string | null;
 }
 
 const HISTORY_LIMIT = 12;
@@ -391,6 +395,37 @@ export const replyPipelineTask = task({
       output = { ...output, appointment_request: null };
     }
 
+    // V2 interactive: the patient TAPPED a slot row (Meta echoed back the
+    // exact id we sent). If the model didn't turn that tap into a
+    // booking_selection itself, synthesize one — a physical tap on an
+    // offered slot is the least ambiguous booking signal possible, and it
+    // must never be lost to model noise. Requires the patient's name to
+    // already be collected (the prompt gates slot offers on name+concern).
+    const tappedSlot = payload.interactiveReplyId
+      ? availableSlots?.find((slot) => slot.id === payload.interactiveReplyId)
+      : undefined;
+    if (tappedSlot && !output.booking_selection && !output.human_handoff) {
+      const persisted = conversation.collected_slots as CollectedSlots | undefined;
+      const name = output.collected.name ?? persisted?.name;
+      const reason =
+        output.collected.reason ?? output.collected.concern ?? persisted?.reason ?? persisted?.concern;
+      if (name) {
+        logger.info("Synthesizing booking_selection from tapped slot row", {
+          tappedSlotId: tappedSlot.id,
+          tappedLabel: tappedSlot.label,
+        });
+        output = {
+          ...output,
+          appointment_request: null,
+          booking_selection: {
+            name: String(name),
+            reason: String(reason ?? "Consultation"),
+            selected_slot_id: tappedSlot.id,
+          },
+        };
+      }
+    }
+
     // The model's reply may be optimistic ("you're booked for..."). If a
     // booking was actually attempted, the real outcome — not the model —
     // has final say on what gets sent. See /docs/GOOGLE_CALENDAR_INTEGRATION.md §6, §7.
@@ -408,6 +443,11 @@ export const replyPipelineTask = task({
     // this same turn moves it past "booking_in_progress" before the
     // end-of-turn write — see transitionBookingStatus()'s one-way rule.
     let currentBookingStatus: BookingStatus = conversation.booking_status;
+    // The slots behind whatever bullet list finalReply ends up containing —
+    // for interactive clinics these render as a tappable WhatsApp list
+    // (translateTurnToActions) instead of text bullets. Set alongside every
+    // finalReply assignment that renders a slot list.
+    let presentedSlots: SchedulingSlot[] | null = null;
 
     // Prompt-level guardrail backed up in code: observed in production —
     // the model fabricated an entire fake slot list (a past time, and times
@@ -433,6 +473,7 @@ export const replyPipelineTask = task({
         } else {
           finalReply = renderSlotsPresentation(availableSlots, knowledge.doctors[0]?.name);
         }
+        presentedSlots = availableSlots;
       } else {
         logger.error("Model set presenting_slots with no real availability data given", {
           reply: output.reply,
@@ -481,6 +522,7 @@ export const replyPipelineTask = task({
         reply: output.reply,
       });
       finalReply = renderSlotsPresentation(availableSlots ?? [], knowledge.doctors[0]?.name);
+      presentedSlots = availableSlots;
     }
 
     if (output.booking_selection && !finalHumanHandoff) {
@@ -500,6 +542,7 @@ export const replyPipelineTask = task({
         availableSlots: availableSlots ?? [],
         requestedTargetUtcIso: requestedTarget?.toUTC().toISO() ?? null,
         messageText: payload.body,
+        tappedSlotId: payload.interactiveReplyId ?? null,
       });
       const candidateSlot = resolution.kind === "unresolved" ? undefined : resolution.slot;
       if (resolution.kind === "recovered") {
@@ -515,9 +558,13 @@ export const replyPipelineTask = task({
       // specific target this turn; falls back to time-of-day-only when the
       // date was ambiguous (e.g. weekday names we don't parse). Either way,
       // a mismatch aborts the booking — it is never silently overridden to
-      // "the first/nearest available slot".
+      // "the first/nearest available slot". A physical TAP is exempt: the
+      // patient selected the row itself, and the "message text" is just the
+      // row title Meta echoed back — there is nothing to cross-check.
       let mismatch = false;
-      if (candidateSlot && requestedTarget) {
+      if (resolution.kind === "tapped") {
+        mismatch = false;
+      } else if (candidateSlot && requestedTarget) {
         mismatch = candidateSlot.startsAt !== requestedTarget.toUTC().toISO();
       } else if (candidateSlot) {
         const mentionedTimes = extractTimeMentions(payload.body);
@@ -556,6 +603,7 @@ export const replyPipelineTask = task({
           body: payload.body,
         });
         finalReply = renderSlotsPresentation(availableSlots ?? [], knowledge.doctors[0]?.name);
+        presentedSlots = availableSlots;
       } else if (mismatch) {
         // Observed in production: the model resolved a patient's clearly
         // stated date/time (e.g. "tomorrow 5pm") to the WRONG id from
@@ -574,6 +622,7 @@ export const replyPipelineTask = task({
                 availableSlots ?? [],
               )
             : renderSlotsPresentation(availableSlots ?? [], knowledge.doctors[0]?.name);
+        presentedSlots = availableSlots;
       } else {
         // Atomic claim, not a read-then-write check: two near-simultaneous
         // inbound messages (e.g. the patient double-tapping "Confirm") each
@@ -668,6 +717,7 @@ export const replyPipelineTask = task({
               bookingResult.reason === "slot_taken"
                 ? renderSlotConflictReply(bookingResult.alternatives)
                 : renderSlotNotOpenReply(bookingResult.alternatives);
+            presentedSlots = bookingResult.alternatives;
             logger.info("Booking lost the race or slot was stale", { reason: bookingResult.reason });
             logger.info("Booking Completed", {
               conversationId: conversation.id,
@@ -717,13 +767,25 @@ export const replyPipelineTask = task({
       finalBookingStatus = transitionBookingStatus(currentBookingStatus, "waiting_for_confirmation");
     }
 
+    // Decision Engine migration step 1 (DECISION_ENGINE.md §6): the final
+    // v1-shaped outcome is translated into an ordered action list and
+    // rendered by the channel adapter. Text-only clinics get exactly the
+    // same plain text as before; interactive clinics get slot offers as a
+    // tappable list message (INTERACTIVE_WHATSAPP.md §7 rollout flag).
+    const actions = translateTurnToActions({
+      finalReply,
+      presentedSlots,
+      interactiveEnabled: knowledge.profile.interactive_enabled,
+    });
+
     // Independent writes/send — run concurrently. The outbound message row
     // (which needs the WhatsApp send result) is inserted right after.
     const [outboundMessageId] = await Promise.all([
-      sendWhatsAppTextMessage({
+      executeActionsOnWhatsApp({
         phoneNumberId: payload.phoneNumberId,
         to: payload.fromWaId,
-        body: finalReply,
+        actions,
+        textFallback: finalReply,
       }),
       updateConversationAfterTurn({
         conversationId: conversation.id,

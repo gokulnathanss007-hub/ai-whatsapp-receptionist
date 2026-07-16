@@ -9,6 +9,16 @@ const webhookMessageSchema = z.object({
   timestamp: z.string(),
   type: z.string(),
   text: z.object({ body: z.string() }).optional(),
+  // Tap replies to interactive messages (INTERACTIVE_WHATSAPP.md §2): parsed
+  // at this boundary into the same internal shape as text — body carries the
+  // human title, interactiveReplyId carries the backend key (e.g. slot id).
+  interactive: z
+    .object({
+      type: z.string(),
+      button_reply: z.object({ id: z.string(), title: z.string() }).optional(),
+      list_reply: z.object({ id: z.string(), title: z.string() }).optional(),
+    })
+    .optional(),
 });
 
 const webhookContactSchema = z.object({
@@ -49,9 +59,11 @@ export interface InboundTextMessage {
   fromWaId: string;
   contactName: string | null;
   body: string;
+  /** Set when the patient tapped a button/list row: the backend key (e.g. a slot id) Meta echoed back. Null for typed messages. */
+  interactiveReplyId: string | null;
 }
 
-/** Flattens a webhook payload into the inbound text messages it carries (ignores status callbacks and non-text types). */
+/** Flattens a webhook payload into the inbound messages it carries — typed text and interactive tap replies (ignores status callbacks and other types). */
 export function extractInboundTextMessages(
   payload: WhatsappWebhookPayload,
 ): InboundTextMessage[] {
@@ -67,14 +79,27 @@ export function extractInboundTextMessages(
       );
 
       for (const message of value.messages) {
-        if (message.type !== "text" || !message.text) continue;
-        results.push({
+        const common = {
           phoneNumberId: value.metadata.phone_number_id,
           waMessageId: message.id,
           fromWaId: message.from,
           contactName: contactByWaId.get(message.from) ?? null,
-          body: message.text.body,
-        });
+        };
+
+        if (message.type === "text" && message.text) {
+          results.push({ ...common, body: message.text.body, interactiveReplyId: null });
+          continue;
+        }
+
+        if (message.type === "interactive" && message.interactive) {
+          const reply = message.interactive.button_reply ?? message.interactive.list_reply;
+          if (reply) {
+            // The human title becomes the body so the whole downstream
+            // pipeline (history, prompt, time parsing) sees a normal
+            // message; the id rides alongside for deterministic resolution.
+            results.push({ ...common, body: reply.title, interactiveReplyId: reply.id });
+          }
+        }
       }
     }
   }
