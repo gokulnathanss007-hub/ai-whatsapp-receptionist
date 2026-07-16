@@ -118,7 +118,7 @@ change the medium, never the manners.
 ## 8. Interactive WhatsApp design (V2 — pointer)
 
 Buttons, lists, location, media, and the decision tree for when the AI uses each are
-specified in `../03-engineering/INTERACTIVE_WHATSAPP.md`; patient-facing UX flows in
+specified in `../03-engineering/PATIENT_EXPERIENCE.md`; patient-facing UX flows in
 `UI_FLOWS.md`. Core product rule: interactivity reduces typing, never adds friction —
 every interactive message must remain answerable by plain text.
 

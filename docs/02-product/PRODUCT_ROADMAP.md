@@ -26,7 +26,7 @@ The inbound WhatsApp receptionist for dermatology & cosmetology clinics.
 Turns the receptionist into a growth engine. Modules:
 
 1. **Interactive WhatsApp Experience** — reply buttons, list messages, location, media,
-   templates (`../03-engineering/INTERACTIVE_WHATSAPP.md`). Requires the Decision Engine
+   templates (`../03-engineering/PATIENT_EXPERIENCE.md`). Requires the Decision Engine
    generalisation (`../03-engineering/DECISION_ENGINE.md`).
 2. **Appointment Management** — closed loop: reminders (T-24h/T-2h templates),
    in-thread cancel/reschedule executed by the AI, staff confirmation view.

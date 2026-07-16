@@ -448,6 +448,8 @@ export const replyPipelineTask = task({
     // (translateTurnToActions) instead of text bullets. Set alongside every
     // finalReply assignment that renders a slot list.
     let presentedSlots: SchedulingSlot[] | null = null;
+    // True when the list follows a failed booking (screen: booking_failed).
+    let presentedSlotsAfterFailure = false;
 
     // Prompt-level guardrail backed up in code: observed in production —
     // the model fabricated an entire fake slot list (a past time, and times
@@ -718,6 +720,7 @@ export const replyPipelineTask = task({
                 ? renderSlotConflictReply(bookingResult.alternatives)
                 : renderSlotNotOpenReply(bookingResult.alternatives);
             presentedSlots = bookingResult.alternatives;
+            presentedSlotsAfterFailure = true;
             logger.info("Booking lost the race or slot was stale", { reason: bookingResult.reason });
             logger.info("Booking Completed", {
               conversationId: conversation.id,
@@ -771,11 +774,12 @@ export const replyPipelineTask = task({
     // v1-shaped outcome is translated into an ordered action list and
     // rendered by the channel adapter. Text-only clinics get exactly the
     // same plain text as before; interactive clinics get slot offers as a
-    // tappable list message (INTERACTIVE_WHATSAPP.md §7 rollout flag).
+    // tappable list message (PATIENT_EXPERIENCE.md §7 rollout flag).
     const actions = translateTurnToActions({
       finalReply,
       presentedSlots,
       interactiveEnabled: knowledge.profile.interactive_enabled,
+      bookingFailed: presentedSlotsAfterFailure,
     });
 
     // Independent writes/send — run concurrently. The outbound message row

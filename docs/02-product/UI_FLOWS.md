@@ -2,7 +2,7 @@
 
 > Owns the *visual/interactive surface* of the product per channel. Conversation logic:
 > `CONVERSATION_FLOWS.md`. Interactive message mechanics & Meta limits:
-> `../03-engineering/INTERACTIVE_WHATSAPP.md`.
+> `../03-engineering/PATIENT_EXPERIENCE.md`.
 
 The product has three UI surfaces across its life: the **WhatsApp thread** (V1–V2), the
 **voice call** (V3), and the **clinic dashboard** (V4).
@@ -26,7 +26,7 @@ The entire UI is a chat thread. Design rules that make plain text feel like an i
 
 Adds native WhatsApp UI elements, selected by the Decision Engine
 (`../03-engineering/DECISION_ENGINE.md`) per the decision tree in
-`../03-engineering/INTERACTIVE_WHATSAPP.md`:
+`../03-engineering/PATIENT_EXPERIENCE.md`:
 
 | Moment | Element | Example |
 |---|---|---|

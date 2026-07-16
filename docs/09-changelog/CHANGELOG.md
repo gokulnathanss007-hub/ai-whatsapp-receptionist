@@ -6,6 +6,24 @@
 
 ---
 
+## 2026-07-16 — Patient Experience Layer + action envelopes
+
+**Docs**
+- `INTERACTIVE_WHATSAPP.md` superseded by `03-engineering/PATIENT_EXPERIENCE.md`
+  (redirect stub kept): WhatsApp interactivity reframed as one renderer of the
+  Patient Experience Layer. New sections: Main Menu spec (+ show/don't-show rules),
+  AI Decision Matrix (situation → action → screen), channel-agnostic component
+  library, Conversation Resume Strategy, rich media flows, future interactive
+  actions (V2–V4), multi-clinic branding.
+
+**Contract change (internal, no model/schema impact)**
+- `[CHANGED]` Decision Engine actions are now **envelopes** — `{action, screen, data}`
+  instead of bare typed verbs — so voice (V3), dashboard (V4), app, and web render the
+  same decisions; `screen` is the semantic journey moment and the unit of analytics.
+  `lib/decision-engine/` refactored to the envelope shape (pure refactor, behaviour
+  byte-identical; AI output contract unchanged — envelopes are produced by the v1
+  translator until the model emits them natively in migration step 3).
+
 ## 2026-07-16 — Interactive WhatsApp phase 1 + Decision Engine step 1 live
 
 **Contract/schema changes**

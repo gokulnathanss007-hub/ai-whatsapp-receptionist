@@ -12,14 +12,16 @@ import type { SchedulingSlot } from "@/lib/scheduling/types";
  * show_calendar_slots action (a tappable WhatsApp list); the surrounding
  * sentences stay as the list body. Every tap has a typed equivalent — the
  * same slots resolve from free text via recoverSelectedSlot
- * (INTERACTIVE_WHATSAPP.md §4.2).
+ * (PATIENT_EXPERIENCE.md §4.2).
  */
 export function translateTurnToActions(params: {
   finalReply: string;
   presentedSlots: SchedulingSlot[] | null;
   interactiveEnabled: boolean;
+  /** True when this turn's slot list follows a failed/lost booking — the screen is booking_failed, not a first offer. */
+  bookingFailed?: boolean;
 }): Action[] {
-  const { finalReply, presentedSlots, interactiveEnabled } = params;
+  const { finalReply, presentedSlots, interactiveEnabled, bookingFailed } = params;
 
   if (
     interactiveEnabled &&
@@ -39,8 +41,14 @@ export function translateTurnToActions(params: {
       .join("\n")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
-    return [{ type: "show_calendar_slots", leadIn, slots: presentedSlots }];
+    return [
+      {
+        action: "show_calendar_slots",
+        screen: bookingFailed ? "booking_failed" : "slot_picker",
+        data: { leadIn, slots: presentedSlots },
+      },
+    ];
   }
 
-  return [{ type: "reply_text", text: finalReply }];
+  return [{ action: "reply_text", screen: "free_text", data: { text: finalReply } }];
 }

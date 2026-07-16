@@ -1,7 +1,7 @@
 # DECISION_ENGINE.md — AI Decision Engine Architecture
 
 > Status: **v1 pattern live; generalised action contract is the V2 design.**
-> Related: `PROJECT_ARCHITECTURE.md` (pipeline), `INTERACTIVE_WHATSAPP.md` (interactive
+> Related: `PROJECT_ARCHITECTURE.md` (pipeline), `PATIENT_EXPERIENCE.md` (interactive
 > actions), `PROMPT_ENGINEERING.md` (output contract), `/CLAUDE.md` §5 (constitutional
 > framing: "the AI proposes; code disposes").
 
@@ -43,27 +43,47 @@ Executor vetoes already in production (the pattern to preserve):
 
 ## 3. The generalised action contract (V2 target)
 
-`[CHANGED — V2 direction]` The v1 fixed fields generalise into an **action list**:
+`[CHANGED — V2 direction]` The v1 fixed fields generalise into an **ordered list of
+action envelopes**. Every action is an envelope — `{ action, screen, data }` — never a
+bare verb (see `PATIENT_EXPERIENCE.md` §2 for the screen registry and rationale:
+`screen` names the semantic journey moment, so voice, dashboard, app, and web render
+the SAME decision; it is also the unit of analytics and channel parity):
 
 ```ts
-// lib/decision-engine/types.ts (target)
+// lib/decision-engine/types.ts (envelope shape — implemented; action set grows additively)
+interface ActionEnvelope<A extends string, D> {
+  action: A;        // the interaction mechanic
+  screen: Screen;   // the semantic journey moment (PATIENT_EXPERIENCE.md §2 registry)
+  data: D;          // channel-agnostic payload — keys and structured values, never channel JSON
+}
+
 type Action =
-  | { type: "reply_text";          text: string }
-  | { type: "show_buttons";        text: string; buttons: ButtonSpec[] }        // ≤3
-  | { type: "show_list";           text: string; sections: ListSection[] }      // ≤10 rows
-  | { type: "show_calendar_slots"; leadIn: string }        // executor injects real slots
-  | { type: "show_location" }                              // clinic maps_url / location msg
-  | { type: "send_pdf";            documentKey: string }   // from clinic knowledge assets
-  | { type: "send_image";          imageKey: string }
-  | { type: "handoff";             reason: HandoffReason }
-  | { type: "book_appointment";    selectedSlotId: string; name: string; reason: string }
-  | { type: "cancel_booking";      appointmentRef: string }
-  | { type: "reschedule_booking";  appointmentRef: string; selectedSlotId: string };
+  | ActionEnvelope<"reply_text",          { text: string }>
+  | ActionEnvelope<"show_buttons",        { text: string; buttons: ButtonSpec[] }>   // ≤3
+  | ActionEnvelope<"show_list",           { text: string; sections: ListSection[] }> // ≤10 rows
+  | ActionEnvelope<"show_calendar_slots", { leadIn: string; slots: SchedulingSlot[] }> // hydrated by executor
+  | ActionEnvelope<"show_location",       Record<string, never>>
+  | ActionEnvelope<"send_pdf",            { documentKey: string }>   // clinic asset keys
+  | ActionEnvelope<"send_image",          { imageKey: string }>
+  | ActionEnvelope<"handoff",             { reason: HandoffReason }>
+  | ActionEnvelope<"book_appointment",    { selectedSlotId: string; name: string; reason: string }>
+  | ActionEnvelope<"cancel_booking",      { appointmentRef: string }>
+  | ActionEnvelope<"reschedule_booking",  { appointmentRef: string; selectedSlotId: string }>;
 
 interface Decision {
   intent: IntentId;
   collected: Record<string, unknown>;
   actions: Action[];          // ordered; executor validates & executes
+}
+```
+
+Example — the confirm moment before a booking:
+
+```jsonc
+{
+  "action": "show_buttons",
+  "screen": "booking_confirmation",
+  "data": { "text": "Book Mon 5:00 PM with Dr. Meera?", "buttons": [{ "id": "<slotId>", "title": "Confirm" }, { "id": "menu_pick_another", "title": "Pick another time" }] }
 }
 ```
 
@@ -125,7 +145,7 @@ Executor invariants:
    internally translate today's v1 output into actions (no prompt change, no behaviour
    change — pure refactor with the existing test suite green).
 2. Add interactive actions (`show_buttons`, `show_list`, …) to the schema + prompt;
-   executor renders them per `INTERACTIVE_WHATSAPP.md` limits.
+   executor renders them per `PATIENT_EXPERIENCE.md` limits.
 3. Extend prompt to emit the action-list shape natively; keep the v1-compat translator
    until all clinics are on the new contract, then retire it (deprecate → migrate →
    remove, CLAUDE.md §18).

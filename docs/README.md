@@ -35,7 +35,7 @@
 | [CLAUDE.md](03-engineering/CLAUDE.md) | Pointer → root constitution |
 | [PROJECT_ARCHITECTURE.md](03-engineering/PROJECT_ARCHITECTURE.md) | End-to-end backend architecture |
 | [DECISION_ENGINE.md](03-engineering/DECISION_ENGINE.md) | AI returns actions; Node executes (v1 live, V2 target) |
-| [INTERACTIVE_WHATSAPP.md](03-engineering/INTERACTIVE_WHATSAPP.md) | Buttons, lists, media, templates, Meta limits, decision tree |
+| [PATIENT_EXPERIENCE.md](03-engineering/PATIENT_EXPERIENCE.md) | Patient Experience Layer: main menu, decision matrix, component library, resume strategy, rich media, branding, Meta limits |
 | [AI_RECEPTIONIST_SPEC.md](03-engineering/AI_RECEPTIONIST_SPEC.md) | Behavioural contract (binds all channels) |
 | [SYSTEM_PROMPT.md](03-engineering/SYSTEM_PROMPT.md) | Production prompt (mirror of `prompts/system_prompt.md`) |
 | [PROMPT_ENGINEERING.md](03-engineering/PROMPT_ENGINEERING.md) | Prompt philosophy: caching, structured outputs, guardrails |

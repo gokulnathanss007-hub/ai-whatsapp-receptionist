@@ -26,8 +26,11 @@
 
 | Feature | Status | Notes |
 |---|---|---|
-| **Interactive WhatsApp Experience** — reply buttons, list messages, location, media, templates | **Phase 1 Live** | Slot offers render as tappable list messages; taps book deterministically (row id = slot id). Behind `clinics.interactive_enabled` (0009). Buttons/location/media/templates still Designed — `../03-engineering/INTERACTIVE_WHATSAPP.md` |
-| **Decision Engine** — AI returns actions; Node executes | **Step 1 Live** | `lib/decision-engine/` Action union + v1 translator + WhatsApp channel adapter (migration plan §6 step 1) — `../03-engineering/DECISION_ENGINE.md` |
+| **Patient Experience Layer** (was "Interactive WhatsApp") — one action-envelope contract rendered per channel | **Phase 1 Live** | Slot offers render as tappable list messages; taps book deterministically (row id = slot id). Behind `clinics.interactive_enabled` (0009). `../03-engineering/PATIENT_EXPERIENCE.md` |
+| **Decision Engine** — AI returns `{action, screen, data}` envelopes; Node executes | **Step 1 Live** | `lib/decision-engine/` envelope union + v1 translator + WhatsApp channel adapter (migration plan §6 step 1) — `../03-engineering/DECISION_ENGINE.md` |
+| **Main Menu** — welcome → tappable menu (Book / Treatments / Fee / Timings / Location / Talk to Receptionist) | Designed | Show/don't-show rules: `../03-engineering/PATIENT_EXPERIENCE.md` §3; next build |
+| Rich media treatment flows (image → explanation → book button) | Designed | Needs `clinic_assets` registry — `PATIENT_EXPERIENCE.md` §8 |
+| Multi-clinic branding (welcome message, tone, logo, colors) | Designed | Data-only per clinic — `PATIENT_EXPERIENCE.md` §10 |
 | **Appointment Management** — reminders (T-24h/T-2h), in-thread cancel/reschedule closed loop | Planned | Extends live cancel/reschedule *capture* into execution |
 | **Missed Call Recovery** — telephony webhook → instant WhatsApp outreach | Planned | Exotel provider seam; `PRODUCT.md` §13 |
 | **Review Automation** — post-visit review request, unhappy-path diversion | Planned | `PRODUCT.md` §11 |

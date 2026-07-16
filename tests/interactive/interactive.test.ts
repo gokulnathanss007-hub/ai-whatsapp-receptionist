@@ -134,37 +134,51 @@ describe("tapped slot outranks everything in selection resolution", () => {
   });
 });
 
-describe("translateTurnToActions (Decision Engine step 1)", () => {
+describe("translateTurnToActions (Decision Engine step 1 — {action, screen, data} envelopes)", () => {
   const listReply = `Here are the open times with Dr. Meera:\n\n• ${FIVE_PM.label}\n• ${SEVEN_PM.label}\n\nWhich time works for you?`;
 
-  it("interactive clinic + slot list → show_calendar_slots with the bullets lifted out", () => {
+  it("interactive clinic + slot list → show_calendar_slots envelope on the slot_picker screen", () => {
     const actions = translateTurnToActions({
       finalReply: listReply,
       presentedSlots: [FIVE_PM, SEVEN_PM],
       interactiveEnabled: true,
     });
     expect(actions).toHaveLength(1);
-    expect(actions[0]!.type).toBe("show_calendar_slots");
-    const action = actions[0]! as Extract<(typeof actions)[number], { type: "show_calendar_slots" }>;
-    expect(action.leadIn).toBe("Here are the open times with Dr. Meera:\n\nWhich time works for you?");
-    expect(action.slots).toHaveLength(2);
+    const envelope = actions[0]!;
+    expect(envelope.action).toBe("show_calendar_slots");
+    expect(envelope.screen).toBe("slot_picker");
+    const action = envelope as Extract<(typeof actions)[number], { action: "show_calendar_slots" }>;
+    expect(action.data.leadIn).toBe("Here are the open times with Dr. Meera:\n\nWhich time works for you?");
+    expect(action.data.slots).toHaveLength(2);
   });
 
-  it("text-only clinic → plain reply_text, byte-identical to v1 behaviour", () => {
+  it("a list after a failed booking lands on the booking_failed screen", () => {
+    const actions = translateTurnToActions({
+      finalReply: listReply,
+      presentedSlots: [FIVE_PM, SEVEN_PM],
+      interactiveEnabled: true,
+      bookingFailed: true,
+    });
+    expect(actions[0]!.screen).toBe("booking_failed");
+  });
+
+  it("text-only clinic → plain reply_text envelope, byte-identical text to v1 behaviour", () => {
     const actions = translateTurnToActions({
       finalReply: listReply,
       presentedSlots: [FIVE_PM, SEVEN_PM],
       interactiveEnabled: false,
     });
-    expect(actions).toEqual([{ type: "reply_text", text: listReply }]);
+    expect(actions).toEqual([{ action: "reply_text", screen: "free_text", data: { text: listReply } }]);
   });
 
-  it("interactive clinic but no slots this turn → plain text", () => {
+  it("interactive clinic but no slots this turn → plain text envelope", () => {
     const actions = translateTurnToActions({
       finalReply: "✅ Your appointment is booked.",
       presentedSlots: null,
       interactiveEnabled: true,
     });
-    expect(actions).toEqual([{ type: "reply_text", text: "✅ Your appointment is booked." }]);
+    expect(actions).toEqual([
+      { action: "reply_text", screen: "free_text", data: { text: "✅ Your appointment is booked." } },
+    ]);
   });
 });

@@ -27,7 +27,7 @@ Responsibilities, in order (the fast-ack contract — CLAUDE.md §10):
 
 Inbound payload types handled: `text`; V2 adds `interactive.button_reply` and
 `interactive.list_reply` (parsed at the boundary into the same internal message shape —
-`../03-engineering/INTERACTIVE_WHATSAPP.md` §2).
+`../03-engineering/PATIENT_EXPERIENCE.md` §2).
 
 ## 2. Google OAuth (admin stopgap — not user-facing)
 

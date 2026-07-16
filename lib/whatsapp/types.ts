@@ -9,7 +9,7 @@ const webhookMessageSchema = z.object({
   timestamp: z.string(),
   type: z.string(),
   text: z.object({ body: z.string() }).optional(),
-  // Tap replies to interactive messages (INTERACTIVE_WHATSAPP.md §2): parsed
+  // Tap replies to interactive messages (PATIENT_EXPERIENCE.md §2): parsed
   // at this boundary into the same internal shape as text — body carries the
   // human title, interactiveReplyId carries the backend key (e.g. slot id).
   interactive: z

@@ -11,7 +11,7 @@ import { sendWhatsAppButtons, sendWhatsAppSlotList } from "@/lib/whatsapp/sendIn
  * If an interactive send fails (e.g. a Meta policy hiccup), falls back to
  * plain text with the same content — a patient must always receive
  * SOMETHING readable, and every tap has a typed equivalent anyway
- * (INTERACTIVE_WHATSAPP.md §4.2).
+ * (PATIENT_EXPERIENCE.md §4.2).
  */
 export async function executeActionsOnWhatsApp(params: {
   phoneNumberId: string;
@@ -22,14 +22,14 @@ export async function executeActionsOnWhatsApp(params: {
 }): Promise<string> {
   let lastOutboundId: string | null = null;
 
-  for (const action of params.actions) {
-    switch (action.type) {
+  for (const envelope of params.actions) {
+    switch (envelope.action) {
       case "reply_text":
       case "handoff":
         lastOutboundId = await sendWhatsAppTextMessage({
           phoneNumberId: params.phoneNumberId,
           to: params.to,
-          body: action.type === "reply_text" ? action.text : params.textFallback,
+          body: envelope.action === "reply_text" ? envelope.data.text : params.textFallback,
         });
         break;
       case "show_calendar_slots":
@@ -37,11 +37,12 @@ export async function executeActionsOnWhatsApp(params: {
           lastOutboundId = await sendWhatsAppSlotList({
             phoneNumberId: params.phoneNumberId,
             to: params.to,
-            bodyText: action.leadIn,
-            slots: action.slots,
+            bodyText: envelope.data.leadIn,
+            slots: envelope.data.slots,
           });
         } catch (error) {
           console.error("Interactive list send failed — falling back to text", {
+            screen: envelope.screen,
             error: error instanceof Error ? error.message : String(error),
           });
           lastOutboundId = await sendWhatsAppTextMessage({
@@ -56,11 +57,12 @@ export async function executeActionsOnWhatsApp(params: {
           lastOutboundId = await sendWhatsAppButtons({
             phoneNumberId: params.phoneNumberId,
             to: params.to,
-            bodyText: action.text,
-            buttons: action.buttons,
+            bodyText: envelope.data.text,
+            buttons: envelope.data.buttons,
           });
         } catch (error) {
           console.error("Interactive buttons send failed — falling back to text", {
+            screen: envelope.screen,
             error: error instanceof Error ? error.message : String(error),
           });
           lastOutboundId = await sendWhatsAppTextMessage({

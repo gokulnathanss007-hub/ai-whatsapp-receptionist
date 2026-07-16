@@ -3,7 +3,7 @@ import type { SchedulingSlot } from "@/lib/scheduling/types";
 
 const GRAPH_API_VERSION = "v20.0";
 
-// Meta Cloud API hard limits — INTERACTIVE_WHATSAPP.md §2. Enforced here in
+// Meta Cloud API hard limits — PATIENT_EXPERIENCE.md §2. Enforced here in
 // the executor, never assumed from the model (DECISION_ENGINE.md §4 invariant
 // 1: the model cannot make the executor exceed a Meta limit).
 const MAX_BUTTONS = 3;
