@@ -62,6 +62,12 @@ export interface ReplyPipelinePayload {
 
 const HISTORY_LIMIT = 12;
 
+// Resume threshold (PATIENT_EXPERIENCE.md §7): after this much silence a
+// returning patient gets a clean scheduling slate (stale relative dates and
+// long-dead slot offers are dropped; name/concern are kept). Matches the
+// Meta 24h session window — beyond it the prior session is over anyway.
+const STALE_CONVERSATION_MS = 24 * 60 * 60 * 1000;
+
 // Deliberately broad: catches any phrasing that claims a booking is already
 // done ("✅ confirmed", "is booked", "all set", "has been scheduled", ...).
 // A narrow "confirmed|✅"-only version was bypassed in production by the
@@ -198,6 +204,35 @@ export const replyPipelineTask = task({
       // attempt, being retried after a crash (e.g. Trigger.dev retry after an
       // OOM or network failure) — not a new message. Fall through and let it
       // genuinely re-attempt the booking below, regardless of age.
+    }
+
+    // Conversation Resume Strategy (PATIENT_EXPERIENCE.md §7): a patient
+    // returning after a long gap must get a fresh start, not the ghost of a
+    // days-old session. Production incident: a conversation frozen at stage
+    // "booking" with preferred "tomorrow" collected 13 days earlier (a) kept
+    // suppressing the Main Menu forever ("never interrupt an active
+    // booking" — but nothing was active) and (b) made the model hallucinate
+    // "You're booked for tomorrow?" from rotten relative dates. Keep durable
+    // identity (name, concern); drop the scheduling state — relative dates
+    // like "tomorrow" are only meaningful within the session that said them.
+    const conversationIsStale =
+      Date.now() - new Date(conversation.last_message_at).getTime() > STALE_CONVERSATION_MS;
+    if (conversationIsStale && conversation.booking_status !== "booking_in_progress") {
+      const cleaned = { ...(conversation.collected_slots as Record<string, unknown>) };
+      delete cleaned.preferred_date;
+      delete cleaned.preferred_time;
+      conversation.collected_slots = cleaned;
+      if (conversation.stage === "booking" || conversation.stage === "qualifying") {
+        conversation.stage = "greeting";
+      }
+      if (conversation.booking_status === "waiting_for_confirmation") {
+        conversation.booking_status = "none";
+      }
+      conversation.current_screen = "free_text";
+      logger.info("Stale conversation resumed — reset scheduling state, kept identity", {
+        conversationId: conversation.id,
+        lastMessageAt: conversation.last_message_at,
+      });
     }
 
     // Independent of each other — run concurrently.
