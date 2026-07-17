@@ -18,6 +18,7 @@ export type Screen =
   | "main_menu"
   | "faq_answer"
   | "qualifying_question"
+  | "doctor_selection"
   | "slot_picker"
   | "booking_confirmation"
   | "booking_failed"
@@ -33,6 +34,20 @@ export interface ButtonSpec {
   title: string;
 }
 
+export interface ListRow {
+  /** Backend key echoed back by Meta in interactive.list_reply.id. */
+  id: string;
+  /** Human label; Meta hard limit 24 chars (enforced by the channel adapter). */
+  title: string;
+  /** Optional sub-text; Meta hard limit 72 chars. */
+  description?: string;
+}
+
+export interface ListSection {
+  title: string;
+  rows: ListRow[];
+}
+
 export interface ActionEnvelope<A extends string, D> {
   action: A;
   screen: Screen;
@@ -43,6 +58,14 @@ export type Action =
   | ActionEnvelope<"reply_text", { text: string }>
   | ActionEnvelope<"show_buttons", { text: string; buttons: ButtonSpec[] }>
   | ActionEnvelope<
+      "show_list",
+      { text: string; buttonLabel: string; sections: ListSection[] }
+    >
+  | ActionEnvelope<
+      "show_main_menu",
+      { welcomeText: string; items: ListRow[] }
+    >
+  | ActionEnvelope<
       "show_calendar_slots",
       {
         /** Patient-facing lead-in rendered as the list message body. */
@@ -51,6 +74,13 @@ export type Action =
         slots: SchedulingSlot[];
       }
     >
+  | ActionEnvelope<
+      "show_location",
+      { clinicName: string; address: string | null; mapsUrl: string | null }
+    >
+  /** Designed (PATIENT_EXPERIENCE.md §8) — requires the clinic asset registry; the adapter falls back to text until then. */
+  | ActionEnvelope<"send_pdf", { assetKey: string; fallbackText: string }>
+  | ActionEnvelope<"send_image", { assetKey: string; fallbackText: string }>
   | ActionEnvelope<"handoff", { reason: HandoffReason }>;
 
 export interface Decision {

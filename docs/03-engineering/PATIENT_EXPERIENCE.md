@@ -107,7 +107,15 @@ special menu handling. Typing "book" instead of tapping works identically (§5 p
 - Immediately after a booking confirmation (the natural close is a warm goodbye, not
   another menu; the patient can always type).
 
-Status: **Designed — next build.** Text-only clinics get a numbered-text menu fallback.
+Status: **Live** (`lib/decision-engine/mainMenu.ts`; deterministic, no model call). Text-only
+clinics get the same menu as a numbered text list, and a typed "1"–"6" resolves as a menu
+pick only while `conversations.current_screen = 'main_menu'`. Menu picks for facts (fee,
+timings, location, treatments) are answered deterministically from clinic knowledge;
+`menu_book_appointment` enters the conversational booking flow (via a doctor list first
+when the clinic has more than one active doctor); `menu_talk_to_human` hands off
+immediately. Slot-row taps now go through a `booking_confirmation` buttons step
+([Confirm] / [Pick another time]) before booking — the confirm button id carries the exact
+slot id (`confirm_slot_<id>`), stateless.
 
 ## 4. AI Decision Matrix ⭐
 

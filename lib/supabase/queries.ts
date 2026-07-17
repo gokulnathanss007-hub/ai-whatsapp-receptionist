@@ -199,6 +199,8 @@ export async function updateConversationAfterTurn(params: {
   handoffReason: HandoffReason | null;
   /** Omit to leave booking_status untouched — most turns (FAQ, qualifying, etc.) aren't booking-related. */
   bookingStatus?: BookingStatus;
+  /** Semantic screen last shown this turn (PATIENT_EXPERIENCE.md §2). Omit to leave unchanged. */
+  currentScreen?: string;
 }): Promise<void> {
   const { error } = await getSupabaseClient()
     .from("conversations")
@@ -211,6 +213,7 @@ export async function updateConversationAfterTurn(params: {
       ...(params.bookingStatus !== undefined
         ? { booking_status: params.bookingStatus, booking_status_updated_at: new Date().toISOString() }
         : {}),
+      ...(params.currentScreen !== undefined ? { current_screen: params.currentScreen } : {}),
     })
     .eq("id", params.conversationId);
   if (error) throw error;

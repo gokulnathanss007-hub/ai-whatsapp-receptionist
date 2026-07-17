@@ -6,6 +6,29 @@
 
 ---
 
+## 2026-07-17 — Patient Experience phase 2: Main Menu + confirm-step booking live
+
+**Contract/schema changes**
+- Migration `0010_conversation_current_screen.sql`: `conversations.current_screen` —
+  the semantic journey moment last shown (PATIENT_EXPERIENCE.md §2); gates typed
+  equivalents of taps (a "2" reply is a menu pick only after the menu) and feeds
+  per-screen analytics.
+- Action union extended (additive): `show_main_menu`, `show_list`, `show_location`,
+  `send_pdf`/`send_image` (render as text fallback until the asset registry exists).
+  Generic list builder enforces Meta limits for every list screen in one place.
+
+**Behaviour**
+- Greeting-only messages ("Hi", "Good morning") and explicit menu requests now render
+  the Main Menu (interactive list, or numbered text for text-only clinics) —
+  deterministic, no model call. Stated intents ("Hi, what's the fee?") skip the menu;
+  the menu never interrupts qualifying/booking/handoff.
+- Menu picks for fee / timings / location / treatments answer deterministically from
+  clinic knowledge; Book Appointment enters the conversational flow (doctor list first
+  when a clinic has >1 active doctor); Talk to Receptionist hands off immediately.
+- Slot-row taps now show a booking_confirmation buttons step ([Confirm] / [Pick another
+  time]) before booking; the confirm id carries the exact slot id (`confirm_slot_<id>`).
+  Typed "confirm"/"change" work identically (taps always have typed equivalents).
+
 ## 2026-07-16 — Patient Experience Layer + action envelopes
 
 **Docs**

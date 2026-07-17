@@ -37,6 +37,17 @@ import {
 import { sendWhatsAppTextMessage } from "@/lib/whatsapp/sendMessage";
 import { executeActionsOnWhatsApp } from "@/lib/whatsapp/channelAdapter";
 import { translateTurnToActions } from "@/lib/decision-engine/translateV1";
+import {
+  isGreetingOnly,
+  isMenuRequest,
+  MAIN_MENU_ITEMS,
+  renderDoctorList,
+  renderMainMenu,
+  renderMainMenuText,
+  resolveMenuSelection,
+} from "@/lib/decision-engine/mainMenu";
+import type { Action } from "@/lib/decision-engine/types";
+import { formatOpeningHours } from "@/lib/scheduling/formatOpeningHours";
 import type { AiOutput, BookingStatus, CollectedSlots, ConversationStage, HandoffReason } from "@/lib/types";
 
 export interface ReplyPipelinePayload {
@@ -198,6 +209,171 @@ export const replyPipelineTask = task({
     const knowledgeBlock = renderClinicKnowledgeBlock(knowledge);
     logger.info("Loaded knowledge + history, inserted inbound message", { ms: elapsed() });
 
+    // ── Patient Experience Layer: deterministic screens ──────────────────
+    // The banking-app moments (menu, menu picks, slot-tap confirmation) are
+    // rendered by CODE, not the model — instant, token-free, and immune to
+    // model noise (PATIENT_EXPERIENCE.md §3/§4). The AI handles everything
+    // conversational; these handlers only fire on unambiguous signals.
+
+    /** Sends this turn's actions + persists the turn — for deterministic (no-AI) screens. The inbound row is already inserted above. */
+    const deterministicTurn = async (params: {
+      actions: Action[];
+      textRendering: string;
+      stage: ConversationStage;
+      collected?: CollectedSlots;
+      humanHandoff?: boolean;
+      handoffReason?: HandoffReason | null;
+      bookingStatus?: BookingStatus;
+      intent: string;
+    }) => {
+      const outboundId = await executeActionsOnWhatsApp({
+        phoneNumberId: payload.phoneNumberId,
+        to: payload.fromWaId,
+        actions: params.actions,
+        textFallback: params.textRendering,
+      });
+      await updateConversationAfterTurn({
+        conversationId: conversation.id,
+        stage: params.stage,
+        mergedSlots: mergeCollectedSlots(conversation.collected_slots, params.collected ?? {}),
+        humanHandoff: params.humanHandoff ?? false,
+        handoffReason: params.handoffReason ?? null,
+        bookingStatus: params.bookingStatus,
+        currentScreen: params.actions[params.actions.length - 1]?.screen,
+      });
+      await insertMessage({
+        conversationId: conversation.id,
+        waMessageId: outboundId,
+        direction: "outbound",
+        body: params.textRendering,
+        intent: params.intent,
+      });
+      await markEventProcessed(payload.waMessageId);
+      logger.info("Deterministic screen turn complete", {
+        screen: params.actions[params.actions.length - 1]?.screen,
+        ms: elapsed(),
+      });
+      return { skipped: false as const, intent: params.intent as AiOutput["intent"], humanHandoff: params.humanHandoff ?? false };
+    };
+
+    const persisted = conversation.collected_slots as CollectedSlots | undefined;
+    const menuAllowedHere =
+      ["greeting", "faq", "followup"].includes(conversation.stage) &&
+      ["none", "confirmed", "failed", "timeout"].includes(conversation.booking_status) &&
+      !conversation.human_handoff;
+
+    // 1) Greeting or explicit menu request → Main Menu. Strictly
+    //    greeting-ONLY messages ("Hi", "Good morning") — a message with any
+    //    stated intent skips the menu and is answered directly. Never
+    //    interrupts qualifying/booking/handoff (menuAllowedHere).
+    if (menuAllowedHere && (isGreetingOnly(payload.body) || isMenuRequest(payload.body))) {
+      const menuText = renderMainMenuText({ clinicName: knowledge.profile.name, patientName: persisted?.name ? String(persisted.name) : payload.contactName });
+      const actions: Action[] = knowledge.profile.interactive_enabled
+        ? [renderMainMenu({ clinicName: knowledge.profile.name, patientName: persisted?.name ? String(persisted.name) : payload.contactName })]
+        : [{ action: "reply_text", screen: "main_menu", data: { text: menuText } }];
+      return deterministicTurn({ actions, textRendering: menuText, stage: "greeting", intent: "greeting" });
+    }
+
+    // 2) Menu picks — taps (menu_* ids) or a typed 1-6 right after the menu.
+    const menuSelection = resolveMenuSelection({
+      body: payload.body,
+      interactiveReplyId: payload.interactiveReplyId,
+      currentScreen: conversation.current_screen,
+    });
+    let effectiveBody = payload.body;
+    if (menuSelection === "menu_talk_to_human") {
+      const reply = "I will connect you with our clinic team. They will reply to you here soon.";
+      return deterministicTurn({
+        actions: [{ action: "handoff", screen: "handoff", data: { reason: "explicit_request" } }],
+        textRendering: reply,
+        stage: "handoff",
+        humanHandoff: true,
+        handoffReason: "explicit_request",
+        intent: "talk_to_human",
+      });
+    } else if (menuSelection === "menu_location") {
+      const lines = [
+        `📍 ${knowledge.profile.name}`,
+        knowledge.profile.address,
+        knowledge.profile.maps_url,
+        "See you soon!",
+      ].filter((line): line is string => Boolean(line));
+      return deterministicTurn({
+        actions: [
+          {
+            action: "show_location",
+            screen: "clinic_location",
+            data: { clinicName: knowledge.profile.name, address: knowledge.profile.address, mapsUrl: knowledge.profile.maps_url },
+          },
+        ],
+        textRendering: lines.join("\n"),
+        stage: "faq",
+        intent: "location",
+      });
+    } else if (menuSelection === "menu_clinic_timings") {
+      const hours = formatOpeningHours(knowledge.profile.opening_hours) ?? knowledge.profile.timings;
+      const reply = hours
+        ? `We are open: ${hours}.\n\nWould you like to book an appointment?`
+        : "Our staff will share the timings with you soon.";
+      return deterministicTurn({
+        actions: [{ action: "reply_text", screen: "faq_answer", data: { text: reply } }],
+        textRendering: reply,
+        stage: "faq",
+        intent: "clinic_timings",
+      });
+    } else if (menuSelection === "menu_consultation_fee" && knowledge.profile.consultation_fee !== null) {
+      const reply = `Our consultation fee is ₹${knowledge.profile.consultation_fee}.\n\nWould you like to book an appointment?`;
+      return deterministicTurn({
+        actions: [{ action: "reply_text", screen: "faq_answer", data: { text: reply } }],
+        textRendering: reply,
+        stage: "faq",
+        intent: "consultation_fee",
+      });
+    } else if (menuSelection === "menu_treatments" && knowledge.services.length > 0) {
+      const lines = knowledge.services.map((s) => `• ${s.display_name}`);
+      const reply = `Here is what we offer:\n\n${lines.join("\n")}\n\nWould you like to book a consultation?`;
+      return deterministicTurn({
+        actions: [{ action: "reply_text", screen: "treatment_info", data: { text: reply } }],
+        textRendering: reply,
+        stage: "faq",
+        intent: "general_treatment_enquiry",
+      });
+    } else if (menuSelection === "menu_book_appointment") {
+      // >1 active doctor → let the patient pick first (data-driven; the
+      // pilot clinic has one doctor, so this list only appears when a
+      // clinic actually has a choice to make).
+      if (knowledge.profile.interactive_enabled && knowledge.doctors.length > 1) {
+        const action = renderDoctorList(knowledge.doctors);
+        const textRendering = `Which doctor would you like to see?\n\n${knowledge.doctors.map((d, i) => `${i + 1}. ${d.name}${d.role ? ` — ${d.role}` : ""}`).join("\n")}`;
+        return deterministicTurn({ actions: [action], textRendering, stage: "qualifying", intent: "book_appointment" });
+      }
+      // Single doctor: straight into the conversational booking flow.
+      effectiveBody = "I want to book an appointment";
+    } else if (menuSelection === "menu_consultation_fee" || menuSelection === "menu_treatments") {
+      // Fact not configured in clinic knowledge — let the AI handle it
+      // (which per the prompt hands off rather than inventing a value).
+      effectiveBody = menuSelection === "menu_consultation_fee" ? "What is the consultation fee?" : "What treatments do you offer?";
+    }
+
+    // 3) Doctor pick (tap on doctor_<index>) → capture + continue to booking.
+    if (payload.interactiveReplyId?.startsWith("doctor_")) {
+      const index = parseInt(payload.interactiveReplyId.slice("doctor_".length), 10);
+      const doctor = knowledge.doctors[index];
+      if (doctor) effectiveBody = `I want to book an appointment with ${doctor.name}`;
+    }
+
+    // 4) Confirmation-button taps (from the slot-tap confirm step below).
+    //    confirm_slot_<id> carries the exact slot id — stateless, same trick
+    //    as list rows. change_slot re-opens the picker conversationally.
+    let confirmedTapSlotId: string | null = null;
+    if (payload.interactiveReplyId?.startsWith("confirm_slot_")) {
+      confirmedTapSlotId = payload.interactiveReplyId.slice("confirm_slot_".length);
+      effectiveBody = "Confirm my appointment";
+    } else if (payload.interactiveReplyId === "change_slot") {
+      effectiveBody = "Please show me other available times";
+    }
+    // ── end deterministic screens; the AI takes it from here ─────────────
+
     // Only check real availability once the conversation has already reached
     // the booking stage (i.e. qualifying is done) and the clinic has opted
     // into calendar-checked auto-confirmation. getSchedulingProvider returns
@@ -226,9 +402,10 @@ export const replyPipelineTask = task({
     // booking words or resolves to a concrete date/time), not just when the
     // persisted stage already caught up.
     const currentMessageSignalsBooking =
-      /\b(book|appointment|slot|schedule|reschedul)/i.test(payload.body) ||
+      /\b(book|appointment|slot|schedule|reschedul|confirm)/i.test(effectiveBody) ||
+      Boolean(payload.interactiveReplyId) ||
       resolveRequestedDateTime({
-        text: payload.body,
+        text: effectiveBody,
         timezone: knowledge.profile.timezone,
         now: new Date(),
       }) !== null;
@@ -247,10 +424,10 @@ export const replyPipelineTask = task({
         // built from. See collectedPreferredDate/Time in the diagnostics log
         // below, which already surfaced this gap without acting on it.
         const collectedSlots = conversation.collected_slots as CollectedSlots | undefined;
-        let requestHint = payload.body;
+        let requestHint = effectiveBody;
         if (
           resolveRequestedDateTime({
-            text: payload.body,
+            text: effectiveBody,
             timezone: knowledge.profile.timezone,
             now: new Date(),
           }) === null &&
@@ -270,6 +447,47 @@ export const replyPipelineTask = task({
         });
       }
     }
+    // 5) Slot-row tap → CONFIRMATION BUTTONS, not an instant booking
+    //    (PATIENT_EXPERIENCE.md §4 booking_confirmation moment). The tapped
+    //    label's date/time is merged into collected state so a typed
+    //    "confirm"/"yes" resolves to the same slot as tapping [Confirm].
+    //    Deterministic — no AI call. Only for interactive clinics; only for
+    //    raw slot-row taps (confirm_slot_* taps continue below and book).
+    if (
+      knowledge.profile.interactive_enabled &&
+      payload.interactiveReplyId &&
+      !confirmedTapSlotId &&
+      availableSlots !== null
+    ) {
+      const tappedRow = availableSlots.find((slot) => slot.id === payload.interactiveReplyId);
+      if (tappedRow) {
+        const [datePart, timePart] = tappedRow.label.split(" – ");
+        const doctorName = knowledge.doctors[0]?.name;
+        const confirmText = `Book ${tappedRow.label}${doctorName ? ` with ${doctorName}` : ""}?`;
+        const textRendering = `${confirmText}\n\nReply "confirm" to book it, or "change" to see other times.`;
+        return deterministicTurn({
+          actions: [
+            {
+              action: "show_buttons",
+              screen: "booking_confirmation",
+              data: {
+                text: confirmText,
+                buttons: [
+                  { id: `confirm_slot_${tappedRow.id}`, title: "Confirm" },
+                  { id: "change_slot", title: "Pick another time" },
+                ],
+              },
+            },
+          ],
+          textRendering,
+          stage: "booking",
+          collected: { preferred_date: datePart, preferred_time: timePart },
+          bookingStatus: transitionBookingStatus(conversation.booking_status, "waiting_for_confirmation"),
+          intent: "book_appointment",
+        });
+      }
+    }
+
     const availableSlotsBlock =
       availableSlots !== null ? renderAvailableSlotsBlock(availableSlots) : undefined;
 
@@ -277,7 +495,7 @@ export const replyPipelineTask = task({
     // datetime, and the slots actually returned — see
     // /docs/GOOGLE_CALENDAR_INTEGRATION.md §6/§7/§8.
     logger.info("Booking request diagnostics", {
-      patientMessage: payload.body,
+      patientMessage: effectiveBody,
       collectedPreferredDate: (conversation.collected_slots as CollectedSlots | undefined)?.preferred_date ?? null,
       collectedPreferredTime: (conversation.collected_slots as CollectedSlots | undefined)?.preferred_time ?? null,
       parsedTargetDateTime: requestedTarget?.toISO() ?? null,
@@ -296,7 +514,7 @@ export const replyPipelineTask = task({
       collectedInfoBlock,
       availableSlotsBlock,
       history,
-      newMessage: payload.body,
+      newMessage: effectiveBody,
     });
 
     let output: AiOutput;
@@ -326,7 +544,7 @@ export const replyPipelineTask = task({
       // pattern, degrade to deterministically presenting the real slots
       // (zero model involvement, nothing invented) instead of handing off.
       // Safety-flagged or data-less turns still fail closed to staff.
-      if (detectSafetyOverride(payload.body)) {
+      if (detectSafetyOverride(effectiveBody)) {
         // Safety-flagged content with no reviewed reply available — the only
         // correct move is a real human.
         output = fallbackHandoffOutput();
@@ -362,7 +580,7 @@ export const replyPipelineTask = task({
     }
     logger.info("Generated AI reply", { ms: elapsed() });
 
-    output = applySafetyOverride(payload.body, output);
+    output = applySafetyOverride(effectiveBody, output);
 
     // Prompt-level guardrail backed up in code, per CLAUDE.md §3 ("never rely
     // on the model alone"): these two paths are meant to be mutually
@@ -401,8 +619,9 @@ export const replyPipelineTask = task({
     // offered slot is the least ambiguous booking signal possible, and it
     // must never be lost to model noise. Requires the patient's name to
     // already be collected (the prompt gates slot offers on name+concern).
-    const tappedSlot = payload.interactiveReplyId
-      ? availableSlots?.find((slot) => slot.id === payload.interactiveReplyId)
+    const effectiveTapSlotId = confirmedTapSlotId ?? payload.interactiveReplyId ?? null;
+    const tappedSlot = effectiveTapSlotId
+      ? availableSlots?.find((slot) => slot.id === effectiveTapSlotId)
       : undefined;
     if (tappedSlot && !output.booking_selection && !output.human_handoff) {
       const persisted = conversation.collected_slots as CollectedSlots | undefined;
@@ -543,8 +762,8 @@ export const replyPipelineTask = task({
         selectedSlotId: bookingSelection.selected_slot_id,
         availableSlots: availableSlots ?? [],
         requestedTargetUtcIso: requestedTarget?.toUTC().toISO() ?? null,
-        messageText: payload.body,
-        tappedSlotId: payload.interactiveReplyId ?? null,
+        messageText: effectiveBody,
+        tappedSlotId: effectiveTapSlotId,
       });
       const candidateSlot = resolution.kind === "unresolved" ? undefined : resolution.slot;
       if (resolution.kind === "recovered") {
@@ -569,7 +788,7 @@ export const replyPipelineTask = task({
       } else if (candidateSlot && requestedTarget) {
         mismatch = candidateSlot.startsAt !== requestedTarget.toUTC().toISO();
       } else if (candidateSlot) {
-        const mentionedTimes = extractTimeMentions(payload.body);
+        const mentionedTimes = extractTimeMentions(effectiveBody);
         mismatch = mentionedTimes.length > 0 && !slotMatchesTimeMention(candidateSlot, mentionedTimes);
       }
 
@@ -798,6 +1017,7 @@ export const replyPipelineTask = task({
         humanHandoff: finalHumanHandoff,
         handoffReason: finalHandoffReason,
         bookingStatus: finalBookingStatus,
+        currentScreen: actions[actions.length - 1]?.screen,
       }),
       output.appointment_request
         ? insertAppointmentRequest({

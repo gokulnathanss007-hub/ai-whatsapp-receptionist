@@ -89,6 +89,8 @@ export interface ConversationRow {
   booking_status: BookingStatus;
   booking_status_updated_at: string;
   booking_in_progress_message_id: string | null;
+  /** Semantic journey moment last shown (PATIENT_EXPERIENCE.md §2) — e.g. 'main_menu' lets a typed "2" resolve as a menu pick. */
+  current_screen: string;
   last_message_at: string;
   created_at: string;
 }

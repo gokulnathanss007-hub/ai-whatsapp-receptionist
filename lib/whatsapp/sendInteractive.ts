@@ -1,4 +1,4 @@
-import type { ButtonSpec } from "@/lib/decision-engine/types";
+import type { ButtonSpec, ListSection } from "@/lib/decision-engine/types";
 import type { SchedulingSlot } from "@/lib/scheduling/types";
 
 const GRAPH_API_VERSION = "v20.0";
@@ -17,14 +17,22 @@ function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
 
-/** Pure payload builder — exported for limit-enforcement unit tests. */
-export function buildSlotListPayload(params: {
+const LIST_ROW_DESCRIPTION_MAX = 72;
+
+/**
+ * Generic list-message builder — the single place Meta list limits are
+ * enforced for EVERY list screen (main menu, doctor selection, slot picker).
+ * Pure; exported for limit-enforcement unit tests.
+ */
+export function buildListMessagePayload(params: {
   to: string;
   bodyText: string;
-  slots: SchedulingSlot[];
+  buttonLabel: string;
+  sections: ListSection[];
 }): Record<string, unknown> {
-  if (params.slots.length === 0 || params.slots.length > MAX_LIST_ROWS) {
-    throw new Error(`List message requires 1-${MAX_LIST_ROWS} rows, got ${params.slots.length}`);
+  const totalRows = params.sections.reduce((n, s) => n + s.rows.length, 0);
+  if (totalRows === 0 || totalRows > MAX_LIST_ROWS) {
+    throw new Error(`List message requires 1-${MAX_LIST_ROWS} rows, got ${totalRows}`);
   }
   return {
     messaging_product: "whatsapp",
@@ -34,22 +42,40 @@ export function buildSlotListPayload(params: {
       type: "list",
       body: { text: truncate(params.bodyText, BODY_MAX) },
       action: {
-        button: truncate("Pick a time", LIST_BUTTON_LABEL_MAX),
-        sections: [
-          {
-            title: truncate("Open times", LIST_ROW_TITLE_MAX),
-            rows: params.slots.map((slot) => ({
-              // The row id IS the slot id — the webhook hands it back
-              // verbatim in interactive.list_reply.id, giving a
-              // deterministic tap→slot binding with no model echo involved.
-              id: slot.id,
-              title: truncate(slot.label, LIST_ROW_TITLE_MAX),
-            })),
-          },
-        ],
+        button: truncate(params.buttonLabel, LIST_BUTTON_LABEL_MAX),
+        sections: params.sections.map((section) => ({
+          title: truncate(section.title, LIST_ROW_TITLE_MAX),
+          rows: section.rows.map((row) => ({
+            id: row.id,
+            title: truncate(row.title, LIST_ROW_TITLE_MAX),
+            ...(row.description ? { description: truncate(row.description, LIST_ROW_DESCRIPTION_MAX) } : {}),
+          })),
+        })),
       },
     },
   };
+}
+
+/** Pure payload builder for the slot picker — exported for limit-enforcement unit tests. */
+export function buildSlotListPayload(params: {
+  to: string;
+  bodyText: string;
+  slots: SchedulingSlot[];
+}): Record<string, unknown> {
+  return buildListMessagePayload({
+    to: params.to,
+    bodyText: params.bodyText,
+    buttonLabel: "Pick a time",
+    sections: [
+      {
+        title: "Open times",
+        // The row id IS the slot id — the webhook hands it back verbatim in
+        // interactive.list_reply.id, giving a deterministic tap→slot binding
+        // with no model echo involved.
+        rows: params.slots.map((slot) => ({ id: slot.id, title: slot.label })),
+      },
+    ],
+  });
 }
 
 /** Pure payload builder — exported for limit-enforcement unit tests. */
@@ -123,5 +149,24 @@ export async function sendWhatsAppButtons(params: {
   return postToMeta(
     params.phoneNumberId,
     buildButtonsPayload({ to: params.to, bodyText: params.bodyText, buttons: params.buttons }),
+  );
+}
+
+/** Sends a generic list message (main menu, doctor selection, …). Session message — 24h window only. */
+export async function sendWhatsAppListMessage(params: {
+  phoneNumberId: string;
+  to: string;
+  bodyText: string;
+  buttonLabel: string;
+  sections: ListSection[];
+}): Promise<string> {
+  return postToMeta(
+    params.phoneNumberId,
+    buildListMessagePayload({
+      to: params.to,
+      bodyText: params.bodyText,
+      buttonLabel: params.buttonLabel,
+      sections: params.sections,
+    }),
   );
 }

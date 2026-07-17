@@ -89,6 +89,14 @@ async function main() {
     console.log("0009 applied (clinics.interactive_enabled)");
   }
 
+  // 0010 — conversations.current_screen (Patient Experience journey state)
+  if (await columnExists(client, "conversations", "current_screen")) {
+    console.log("0010 already applied — skipping");
+  } else {
+    await client.query(migration("0010_conversation_current_screen.sql"));
+    console.log("0010 applied (conversations.current_screen)");
+  }
+
   // Pilot rollout: Glow Skin Clinic gets the interactive experience.
   const interactive = await client.query(
     `update clinics set interactive_enabled = true where name = 'Glow Skin Clinic' and interactive_enabled = false returning id`,

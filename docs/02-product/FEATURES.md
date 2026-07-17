@@ -26,7 +26,7 @@
 
 | Feature | Status | Notes |
 |---|---|---|
-| **Patient Experience Layer** (was "Interactive WhatsApp") — one action-envelope contract rendered per channel | **Phase 1 Live** | Slot offers render as tappable list messages; taps book deterministically (row id = slot id). Behind `clinics.interactive_enabled` (0009). `../03-engineering/PATIENT_EXPERIENCE.md` |
+| **Patient Experience Layer** (was "Interactive WhatsApp") — one action-envelope contract rendered per channel | **Phase 2 Live** | Main Menu on greeting (list / numbered text), deterministic menu-pick answers from clinic knowledge, slot list picker, slot tap → confirm buttons → book, location text, doctor list (>1 doctor), `current_screen` state (0010). Behind `clinics.interactive_enabled` (0009). Media/templates still Designed — `../03-engineering/PATIENT_EXPERIENCE.md` |
 | **Decision Engine** — AI returns `{action, screen, data}` envelopes; Node executes | **Step 1 Live** | `lib/decision-engine/` envelope union + v1 translator + WhatsApp channel adapter (migration plan §6 step 1) — `../03-engineering/DECISION_ENGINE.md` |
 | **Main Menu** — welcome → tappable menu (Book / Treatments / Fee / Timings / Location / Talk to Receptionist) | Designed | Show/don't-show rules: `../03-engineering/PATIENT_EXPERIENCE.md` §3; next build |
 | Rich media treatment flows (image → explanation → book button) | Designed | Needs `clinic_assets` registry — `PATIENT_EXPERIENCE.md` §8 |
