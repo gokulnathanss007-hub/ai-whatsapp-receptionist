@@ -350,9 +350,12 @@ export const replyPipelineTask = task({
         intent: "location",
       });
     } else if (menuSelection === "menu_clinic_timings") {
+      // Just the fact — no "would you like to book?" tacked on. Every menu
+      // answer ending with the same booking nudge read as robotic nagging
+      // (product feedback 2026-07-18); the menu is always one tap away.
       const hours = formatOpeningHours(knowledge.profile.opening_hours) ?? knowledge.profile.timings;
       const reply = hours
-        ? `We are open: ${hours}.\n\nWould you like to book an appointment?`
+        ? `We are open: ${hours}.`
         : "Our staff will share the timings with you soon.";
       return deterministicTurn({
         actions: [{ action: "reply_text", screen: "faq_answer", data: { text: reply } }],
@@ -361,7 +364,7 @@ export const replyPipelineTask = task({
         intent: "clinic_timings",
       });
     } else if (menuSelection === "menu_consultation_fee" && knowledge.profile.consultation_fee !== null) {
-      const reply = `Our consultation fee is ₹${knowledge.profile.consultation_fee}.\n\nWould you like to book an appointment?`;
+      const reply = `Our consultation fee is ₹${knowledge.profile.consultation_fee}.`;
       return deterministicTurn({
         actions: [{ action: "reply_text", screen: "faq_answer", data: { text: reply } }],
         textRendering: reply,
@@ -370,7 +373,7 @@ export const replyPipelineTask = task({
       });
     } else if (menuSelection === "menu_treatments" && knowledge.services.length > 0) {
       const lines = knowledge.services.map((s) => `• ${s.display_name}`);
-      const reply = `Here is what we offer:\n\n${lines.join("\n")}\n\nWould you like to book a consultation?`;
+      const reply = `Here is what we offer:\n\n${lines.join("\n")}\n\nReply with a treatment name to know more.`;
       return deterministicTurn({
         actions: knowledge.profile.interactive_enabled
           ? [renderTreatmentsList(knowledge.services)]
