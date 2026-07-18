@@ -134,6 +134,33 @@ describe("tapped slot outranks everything in selection resolution", () => {
   });
 });
 
+describe("treatments menu (tappable list from clinic knowledge)", async () => {
+  const { renderTreatmentsList } = await import("@/lib/decision-engine/mainMenu");
+  const services = [
+    { service_key: "acne", display_name: "Acne", high_level_info: "Treatments to improve acne; consultation required." },
+    { service_key: "hydrafacial", display_name: "HydraFacial", high_level_info: null },
+  ];
+
+  it("rows carry treatment_<service_key> ids and knowledge-driven titles", () => {
+    const action = renderTreatmentsList(services);
+    expect(action.action).toBe("show_list");
+    expect(action.screen).toBe("treatment_info");
+    expect(action.data.sections[0]!.title).toBe("Popular treatments");
+    expect(action.data.sections[0]!.rows.map((r) => r.id)).toEqual(["treatment_acne", "treatment_hydrafacial"]);
+    expect(action.data.sections[0]!.rows[0]!.description).toContain("acne");
+    expect(action.data.sections[0]!.rows[1]!.description).toBeUndefined();
+  });
+
+  it("caps at 10 rows (Meta list limit)", () => {
+    const many = Array.from({ length: 14 }, (_, i) => ({
+      service_key: `s${i}`,
+      display_name: `Service ${i}`,
+      high_level_info: null,
+    }));
+    expect(renderTreatmentsList(many).data.sections[0]!.rows).toHaveLength(10);
+  });
+});
+
 describe("translateTurnToActions (Decision Engine step 1 — {action, screen, data} envelopes)", () => {
   const listReply = `Here are the open times with Dr. Meera:\n\n• ${FIVE_PM.label}\n• ${SEVEN_PM.label}\n\nWhich time works for you?`;
 

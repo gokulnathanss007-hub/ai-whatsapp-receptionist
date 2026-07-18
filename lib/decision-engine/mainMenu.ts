@@ -1,5 +1,5 @@
 import type { Action, ListRow } from "@/lib/decision-engine/types";
-import type { ClinicDoctor } from "@/lib/knowledge/types";
+import type { ClinicDoctor, ClinicService } from "@/lib/knowledge/types";
 
 // The Main Menu — the product's front door (PATIENT_EXPERIENCE.md §3).
 // Item ids are backend keys handled deterministically in the pipeline;
@@ -76,6 +76,33 @@ export function renderMainMenuText(params: { clinicName: string; patientName?: s
     : `Welcome to ${params.clinicName}! 👋`;
   const lines = MAIN_MENU_ITEMS.map((item, i) => `${i + 1}. ${item.title}`);
   return `${welcome}\nHow can we help you today?\n\n${lines.join("\n")}\n\nReply with a number, or just type your question.`;
+}
+
+/**
+ * Treatments as a tappable list (rows come from clinic knowledge, never
+ * hardcoded). Row ids carry the service_key — tapping one shows that
+ * treatment's info with a Book button, and the tapped treatment is captured
+ * as the patient's concern so booking continues without re-asking.
+ */
+export function renderTreatmentsList(services: ClinicService[]): Extract<Action, { action: "show_list" }> {
+  return {
+    action: "show_list",
+    screen: "treatment_info",
+    data: {
+      text: "Here is what we offer. Tap a treatment to know more.",
+      buttonLabel: "Treatments",
+      sections: [
+        {
+          title: "Popular treatments",
+          rows: services.slice(0, 10).map((service) => ({
+            id: `treatment_${service.service_key}`,
+            title: service.display_name,
+            ...(service.high_level_info ? { description: service.high_level_info } : {}),
+          })),
+        },
+      ],
+    },
+  };
 }
 
 /** Shown only when the clinic actually has more than one active doctor — data-driven, never hardcoded. */

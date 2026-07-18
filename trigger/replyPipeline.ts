@@ -47,6 +47,7 @@ import {
   renderDoctorList,
   renderMainMenu,
   renderMainMenuText,
+  renderTreatmentsList,
   resolveMenuSelection,
 } from "@/lib/decision-engine/mainMenu";
 import type { Action } from "@/lib/decision-engine/types";
@@ -371,7 +372,9 @@ export const replyPipelineTask = task({
       const lines = knowledge.services.map((s) => `• ${s.display_name}`);
       const reply = `Here is what we offer:\n\n${lines.join("\n")}\n\nWould you like to book a consultation?`;
       return deterministicTurn({
-        actions: [{ action: "reply_text", screen: "treatment_info", data: { text: reply } }],
+        actions: knowledge.profile.interactive_enabled
+          ? [renderTreatmentsList(knowledge.services)]
+          : [{ action: "reply_text", screen: "treatment_info", data: { text: reply } }],
         textRendering: reply,
         stage: "faq",
         intent: "general_treatment_enquiry",
@@ -399,6 +402,34 @@ export const replyPipelineTask = task({
       // Fact not configured in clinic knowledge — let the AI handle it
       // (which per the prompt hands off rather than inventing a value).
       effectiveBody = menuSelection === "menu_consultation_fee" ? "What is the consultation fee?" : "What treatments do you offer?";
+    }
+
+    // 2b) Treatment pick (tap on treatment_<service_key>) → that treatment's
+    //     info + a Book button; the tapped treatment becomes the patient's
+    //     concern so booking never re-asks what they're coming in for.
+    if (payload.interactiveReplyId?.startsWith("treatment_")) {
+      const serviceKey = payload.interactiveReplyId.slice("treatment_".length);
+      const service = knowledge.services.find((s) => s.service_key === serviceKey);
+      if (service) {
+        const info = service.high_level_info ?? `${service.display_name} is one of our treatments.`;
+        const text = `${service.display_name}: ${info}\n\nWould you like to book a consultation?`;
+        return deterministicTurn({
+          actions: [
+            {
+              action: "show_buttons",
+              screen: "treatment_info",
+              data: {
+                text,
+                buttons: [{ id: "menu_book_appointment", title: "Book Appointment" }],
+              },
+            },
+          ],
+          textRendering: `${text}\n\nReply "book" to book a consultation.`,
+          stage: "faq",
+          collected: { concern: service.display_name },
+          intent: "general_treatment_enquiry",
+        });
+      }
     }
 
     // 3) Doctor pick (tap on doctor_<index>) → capture + continue to booking.
