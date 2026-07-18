@@ -9,9 +9,9 @@ import { Client } from "pg";
 
 const CLINIC_ID = "ff605796-fc70-42cb-b10d-ef67c5b5d092";
 const NEW_NAME = "Medixum Clinic";
-const NEW_ADDRESS = "Main Road, Meenakshi Nagar, Sakkimangalam, Madurai - 625 201";
+const NEW_ADDRESS = "Main Road, Sakkimangalam, Meenakshi Nagar, Madurai - 625 201";
 const NEW_MAPS_URL =
-  "https://maps.google.com/?q=Main+Road,+Meenakshi+Nagar,+Sakkimangalam,+Madurai+625201";
+  "https://maps.google.com/?q=Main+Road,+Sakkimangalam,+Meenakshi+Nagar,+Madurai+625201";
 
 async function main() {
   const raw = readFileSync(path.join(process.cwd(), ".env.local"), "utf-8");
