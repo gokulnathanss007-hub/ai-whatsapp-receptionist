@@ -80,7 +80,8 @@ export function renderBookingConfirmation(params: {
  * days (e.g. Sundays) can never appear.
  */
 export function renderDayPickerText(days: Array<{ title: string; freeCount: number }>): string {
-  const lines = days.map((day) => `• ${day.title} (${day.freeCount} times open)`);
+  // Just the day names — free-slot counts confused patients (2026-07-18).
+  const lines = days.map((day) => `• ${day.title}`);
   return `Which day works for you?\n\n${lines.join("\n")}\n\nJust reply with the day.`;
 }
 

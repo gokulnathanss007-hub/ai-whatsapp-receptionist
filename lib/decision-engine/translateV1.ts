@@ -43,10 +43,11 @@ export function translateTurnToActions(params: {
           sections: [
             {
               title: "Open days",
+              // Just the day — no free-slot counts; "20 times open" confused
+              // patients (product decision 2026-07-18).
               rows: presentedDays.map((day) => ({
                 id: dayRowId(day.dayKey),
                 title: day.title,
-                description: `${day.freeCount} times open`,
               })),
             },
           ],

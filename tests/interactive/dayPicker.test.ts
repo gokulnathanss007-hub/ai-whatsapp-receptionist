@@ -75,11 +75,12 @@ describe("day picker rendering", () => {
     { dayKey: "2026-07-18", title: "Tomorrow", freeCount: 12 },
   ];
 
-  it("text fallback lists each open day", () => {
+  it("text fallback lists each open day — no confusing slot counts", () => {
     const text = renderDayPickerText(days);
     expect(text).toContain("Which day works for you?");
-    expect(text).toContain("• Today (8 times open)");
-    expect(text).toContain("• Tomorrow (12 times open)");
+    expect(text).toContain("• Today");
+    expect(text).toContain("• Tomorrow");
+    expect(text).not.toContain("times open");
   });
 
   it("interactive clinics get a show_list envelope on the day_picker screen", () => {
@@ -96,7 +97,7 @@ describe("day picker rendering", () => {
     const data = (envelope as Extract<typeof envelope, { action: "show_list" }>).data;
     expect(data.buttonLabel).toBe("Pick a day");
     expect(data.sections[0]!.rows.map((r) => r.id)).toEqual(["day_2026-07-17", "day_2026-07-18"]);
-    expect(data.sections[0]!.rows[0]!.description).toBe("8 times open");
+    expect(data.sections[0]!.rows[0]!.description).toBeUndefined();
     expect(data.text).toBe("Which day works for you?\n\nJust reply with the day.");
   });
 
