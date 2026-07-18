@@ -19,6 +19,7 @@ export type Screen =
   | "faq_answer"
   | "qualifying_question"
   | "doctor_selection"
+  | "day_picker"
   | "slot_picker"
   | "booking_confirmation"
   | "booking_failed"

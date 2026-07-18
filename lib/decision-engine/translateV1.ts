@@ -1,5 +1,6 @@
 import type { Action } from "@/lib/decision-engine/types";
 import type { SchedulingSlot } from "@/lib/scheduling/types";
+import { dayRowId, type DayOption } from "@/lib/scheduling/dayPicker";
 
 /**
  * Translates the pipeline's final v1-shaped turn outcome into the ordered
@@ -20,8 +21,39 @@ export function translateTurnToActions(params: {
   interactiveEnabled: boolean;
   /** True when this turn's slot list follows a failed/lost booking — the screen is booking_failed, not a first offer. */
   bookingFailed?: boolean;
+  /** Day options when this turn asks "which day?" (day-first booking, PATIENT_EXPERIENCE.md §5) — takes precedence over slots. */
+  presentedDays?: DayOption[] | null;
 }): Action[] {
-  const { finalReply, presentedSlots, interactiveEnabled, bookingFailed } = params;
+  const { finalReply, presentedSlots, interactiveEnabled, bookingFailed, presentedDays } = params;
+
+  if (interactiveEnabled && presentedDays && presentedDays.length > 0 && presentedDays.length <= 10) {
+    const leadIn = finalReply
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("•"))
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    return [
+      {
+        action: "show_list",
+        screen: "day_picker",
+        data: {
+          text: leadIn,
+          buttonLabel: "Pick a day",
+          sections: [
+            {
+              title: "Open days",
+              rows: presentedDays.map((day) => ({
+                id: dayRowId(day.dayKey),
+                title: day.title,
+                description: `${day.freeCount} times open`,
+              })),
+            },
+          ],
+        },
+      },
+    ];
+  }
 
   if (
     interactiveEnabled &&

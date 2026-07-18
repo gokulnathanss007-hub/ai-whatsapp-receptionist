@@ -6,6 +6,20 @@
 
 ---
 
+## 2026-07-17 — Day-first booking (day picker before time picker)
+
+**Behaviour**
+- When a patient is ready to book but hasn't named a day or time, the receptionist now
+  asks **"Which day works for you?"** with a tappable list of OPEN days only ("Today",
+  "Tomorrow", "Sat, Jul 19", each with its free-times count). Days are derived from real
+  availability, so closed days (e.g. Sundays) can never appear. Tapping a day shows that
+  day's times only; the existing confirm-buttons step then books it.
+- A patient who states an exact day/time ("tomorrow 5pm") still skips the day picker.
+- A bare time typed after picking a day ("6 pm") resolves against the PICKED day, never
+  silently back to today.
+- New screen `day_picker`; day rows carry `day_<ISO date>` ids (stateless, same pattern
+  as slot ids). Text-only clinics keep the previous flow unchanged.
+
 ## 2026-07-17 — Patient Experience phase 2: Main Menu + confirm-step booking live
 
 **Contract/schema changes**

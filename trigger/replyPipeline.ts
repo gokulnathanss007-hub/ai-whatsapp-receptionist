@@ -12,11 +12,14 @@ import { getSchedulingProvider } from "@/lib/scheduling";
 import {
   renderAvailableSlotsBlock,
   renderBookingConfirmation,
+  renderDayPickerText,
   renderRequestedSlotUnavailable,
   renderSlotConflictReply,
   renderSlotNotOpenReply,
   renderSlotsPresentation,
 } from "@/lib/scheduling/renderSlotsBlock";
+import { listOpenDays, parseDayRowId, type DayOption } from "@/lib/scheduling/dayPicker";
+import { listAvailableSlots } from "@/lib/scheduling/listAvailableSlots";
 import { resolveSelectedSlot } from "@/lib/scheduling/recoverSelectedSlot";
 import { formatRequestedLabel, resolveRequestedDateTime } from "@/lib/scheduling/requestedDateTime";
 import type { SchedulingSlot } from "@/lib/scheduling/types";
@@ -407,6 +410,52 @@ export const replyPipelineTask = task({
     } else if (payload.interactiveReplyId === "change_slot") {
       effectiveBody = "Please show me other available times";
     }
+
+    // 5) Day pick (tap on day_<date>) → that day's times as a tappable list.
+    //    Day-first booking (PATIENT_EXPERIENCE.md §5): the patient chose a
+    //    day from the day picker; show ONLY that day's free times.
+    //    Deterministic — no AI call.
+    const tappedDayKey = payload.interactiveReplyId ? parseDayRowId(payload.interactiveReplyId) : null;
+    if (tappedDayKey && knowledge.profile.auto_confirm_enabled) {
+      const daySlots = await listAvailableSlots({ clinicId, dayKey: tappedDayKey });
+      if (daySlots && daySlots.length > 0) {
+        const dayLabel = daySlots[0]!.label.split(" – ")[0]!;
+        const leadIn = `Times for ${dayLabel} — which works for you?`;
+        const textRendering = `${leadIn}\n\n${daySlots.map((s) => `• ${s.label}`).join("\n")}\n\nWant a different time? Just type it (e.g. 6 pm).`;
+        return deterministicTurn({
+          actions: [{ action: "show_calendar_slots", screen: "slot_picker", data: { leadIn, slots: daySlots } }],
+          textRendering,
+          stage: "booking",
+          collected: { preferred_date: dayLabel },
+          bookingStatus: transitionBookingStatus(conversation.booking_status, "waiting_for_confirmation"),
+          intent: "book_appointment",
+        });
+      }
+      if (daySlots) {
+        // That day filled up between the picker and the tap — re-offer days.
+        const days = await listOpenDays(clinicId);
+        if (days && days.length > 0) {
+          const text = `Sorry, that day is now full.\n\n${renderDayPickerText(days)}`;
+          const actions = translateTurnToActions({
+            finalReply: text,
+            presentedSlots: null,
+            interactiveEnabled: knowledge.profile.interactive_enabled,
+            presentedDays: days,
+          });
+          return deterministicTurn({ actions, textRendering: text, stage: "booking", intent: "book_appointment" });
+        }
+        const text =
+          "Sorry, that day is now full, and no other days are open this week. Our staff will message you soon with new times.";
+        return deterministicTurn({
+          actions: [{ action: "reply_text", screen: "booking_failed", data: { text } }],
+          textRendering: text,
+          stage: "booking",
+          intent: "book_appointment",
+        });
+      }
+      // daySlots === null → calendar connection is down; fall through to the
+      // AI/legacy flow rather than dead-ending the tap.
+    }
     // ── end deterministic screens; the AI takes it from here ─────────────
 
     // Only check real availability once the conversation has already reached
@@ -460,15 +509,23 @@ export const replyPipelineTask = task({
         // below, which already surfaced this gap without acting on it.
         const collectedSlots = conversation.collected_slots as CollectedSlots | undefined;
         let requestHint = effectiveBody;
-        if (
+        const bodyResolves =
           resolveRequestedDateTime({
             text: effectiveBody,
             timezone: knowledge.profile.timezone,
             now: new Date(),
-          }) === null &&
-          (collectedSlots?.preferred_date || collectedSlots?.preferred_time)
-        ) {
+          }) !== null;
+        // Day-first flow: "6 pm" typed AFTER picking Saturday means Saturday
+        // 6 pm — a bare time parses as "today", which would silently switch
+        // the day the patient just chose. If the message states a time but
+        // no day, the day they already picked wins.
+        const bodyMentionsDay =
+          /\b(today|tomorrow|now|mon|tue|wed|thu|fri|sat|sun)\w*\b/i.test(effectiveBody) ||
+          /\d{1,2}[/\-]\d{1,2}/.test(effectiveBody);
+        if (!bodyResolves && (collectedSlots?.preferred_date || collectedSlots?.preferred_time)) {
           requestHint = `${collectedSlots?.preferred_date ?? ""} ${collectedSlots?.preferred_time ?? ""}`.trim();
+        } else if (bodyResolves && !bodyMentionsDay && collectedSlots?.preferred_date) {
+          requestHint = `${collectedSlots.preferred_date} ${effectiveBody}`;
         }
 
         availableSlots = await provider.listAvailableSlots({ requestHint });
@@ -704,6 +761,9 @@ export const replyPipelineTask = task({
     let presentedSlots: SchedulingSlot[] | null = null;
     // True when the list follows a failed booking (screen: booking_failed).
     let presentedSlotsAfterFailure = false;
+    // Day options when this turn asks "which day?" instead of listing times
+    // (day-first booking, PATIENT_EXPERIENCE.md §5).
+    let presentedDays: DayOption[] | null = null;
 
     // Prompt-level guardrail backed up in code: observed in production —
     // the model fabricated an entire fake slot list (a past time, and times
@@ -726,10 +786,25 @@ export const replyPipelineTask = task({
             formatRequestedLabel(requestedTarget, clinicTimezone, new Date()),
             availableSlots,
           );
+          presentedSlots = availableSlots;
+        } else if (!requestedTarget && knowledge.profile.interactive_enabled) {
+          // Day-first booking (PATIENT_EXPERIENCE.md §5): the patient hasn't
+          // named a day or time, so ask WHICH DAY before showing times —
+          // only days with real free slots appear, so closed days (e.g.
+          // Sunday) are impossible. A stated day/time still goes straight
+          // to the exact/nearest time flow above.
+          const days = await listOpenDays(clinicId);
+          if (days && days.length > 1) {
+            finalReply = renderDayPickerText(days);
+            presentedDays = days;
+          } else {
+            finalReply = renderSlotsPresentation(availableSlots, knowledge.doctors[0]?.name);
+            presentedSlots = availableSlots;
+          }
         } else {
           finalReply = renderSlotsPresentation(availableSlots, knowledge.doctors[0]?.name);
+          presentedSlots = availableSlots;
         }
-        presentedSlots = availableSlots;
       } else {
         logger.error("Model set presenting_slots with no real availability data given", {
           reply: output.reply,
@@ -1034,6 +1109,7 @@ export const replyPipelineTask = task({
       presentedSlots,
       interactiveEnabled: knowledge.profile.interactive_enabled,
       bookingFailed: presentedSlotsAfterFailure,
+      presentedDays,
     });
 
     // Independent writes/send — run concurrently. The outbound message row

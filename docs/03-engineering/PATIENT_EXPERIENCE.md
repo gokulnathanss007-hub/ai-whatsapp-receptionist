@@ -58,6 +58,7 @@ Screen registry (grows additively; never repurpose a name):
 | `main_menu` | Welcome / "what can I do" entry point |
 | `faq_answer` | A fact answered (fee, timings, parking, …) |
 | `qualifying_question` | One intake question |
+| `day_picker` | Open days offered (day-first booking) |
 | `slot_picker` | Real availability offered |
 | `booking_confirmation` | Confirm/change moment before or after booking |
 | `booking_failed` | Slot lost / not available — alternatives offered |
@@ -127,6 +128,9 @@ consume it; reviewers check behaviour against it.
 | Greeting / new conversation | `show_list` | `main_menu` | List message (menu) |
 | FAQ (fee, timings, parking, policy) | `reply_text` | `faq_answer` | Text — facts never hide behind taps |
 | Qualifying (name, concern, one at a time) | `reply_text` | `qualifying_question` | Text question |
+| Ready to book, no day stated | `show_list` | `day_picker` | List of OPEN days only ("Today", "Tomorrow", "Sat, Jul 19" + free count) — closed days never appear |
+| Day chosen (tap `day_<date>` or typed) | `show_calendar_slots` | `slot_picker` | List message, that day's real slots only |
+| Patient stated exact day+time | `show_calendar_slots` | `slot_picker` | Skip the day picker — exact/nearest flow directly |
 | Offering appointment times | `show_calendar_slots` | `slot_picker` | List message, rows = real slots |
 | Confirm / change moment | `show_buttons` | `booking_confirmation` | ≤3 reply buttons |
 | Booking result (success) | `reply_text` | `booking_confirmation` | Verified ✅ text |

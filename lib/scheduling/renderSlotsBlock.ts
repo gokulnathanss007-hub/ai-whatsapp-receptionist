@@ -73,6 +73,17 @@ export function renderBookingConfirmation(params: {
  * list can never be trusted, only the real data can. See
  * /docs/GOOGLE_CALENDAR_INTEGRATION.md §6.
  */
+/**
+ * Deterministic "which day works for you?" text — the plain-text rendering
+ * behind the interactive day-picker list (PATIENT_EXPERIENCE.md §5: day
+ * first, then time). Only days with real free times are listed, so closed
+ * days (e.g. Sundays) can never appear.
+ */
+export function renderDayPickerText(days: Array<{ title: string; freeCount: number }>): string {
+  const lines = days.map((day) => `• ${day.title} (${day.freeCount} times open)`);
+  return `Which day works for you?\n\n${lines.join("\n")}\n\nJust reply with the day.`;
+}
+
 export function renderSlotsPresentation(slots: SchedulingSlot[], doctorName?: string): string {
   if (slots.length === 0) {
     return "Sorry, no times are open right now. Our staff will message you soon with new times.";

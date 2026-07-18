@@ -44,6 +44,14 @@ export async function listAvailableSlots(params: {
    * earliest times, the exact substitution family this file exists to kill.
    */
   exactStartUtcIso?: string;
+  /**
+   * Clinic-local calendar day (ISO date, e.g. "2026-07-19") to restrict
+   * results to — the day-picker flow (PATIENT_EXPERIENCE.md §5: day first,
+   * then time). Takes precedence over requestHint parsing.
+   */
+  dayKey?: string;
+  /** Max slots returned in the generic (no-target) path. Defaults to MAX_OFFERED_SLOTS; the day-grouping engine passes a large value to see the whole window. */
+  limit?: number;
 }): Promise<SchedulingSlot[] | null> {
   const account = await getClinicGoogleAccount(params.clinicId);
   if (!account || account.sync_status !== "connected") return null;
@@ -62,10 +70,14 @@ export async function listAvailableSlots(params: {
 
   const now = new Date();
   let target: DateTime | null = null;
+  let dayKeyDate: DateTime | null = null;
   if (params.exactStartUtcIso) {
     const exact = DateTime.fromISO(params.exactStartUtcIso, { zone: "utc" });
     if (!exact.isValid) return [];
     target = exact;
+  } else if (params.dayKey) {
+    dayKeyDate = DateTime.fromISO(params.dayKey, { zone: clinic.timezone });
+    if (!dayKeyDate.isValid) return [];
   } else if (params.requestHint) {
     target = resolveRequestedDateTime({ text: params.requestHint, timezone: clinic.timezone, now });
   }
@@ -76,6 +88,10 @@ export async function listAvailableSlots(params: {
     // otherwise a target a few days out would never even be considered.
     const daysUntilTarget = Math.ceil((target.toMillis() - now.getTime()) / (24 * 60 * 60 * 1000));
     daysAhead = Math.max(daysAhead, daysUntilTarget + 1);
+  }
+  if (dayKeyDate) {
+    const daysUntilDay = Math.ceil((dayKeyDate.endOf("day").toMillis() - now.getTime()) / (24 * 60 * 60 * 1000));
+    daysAhead = Math.max(daysAhead, daysUntilDay + 1);
   }
   const timeMax = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
 
@@ -110,6 +126,17 @@ export async function listAvailableSlots(params: {
 
   const available = filterOutBusy(candidates, busyIntervals);
 
+  if (dayKeyDate) {
+    // Day-picker flow: every free slot on the chosen clinic-local day, capped
+    // at the Meta list-row limit (10). If a busy day has more, the earliest
+    // 10 are shown — typing a later time still works, every tap has a typed
+    // equivalent (PATIENT_EXPERIENCE.md §6.2).
+    const dayKey = dayKeyDate.toISODate();
+    return available
+      .filter((slot) => DateTime.fromISO(slot.startsAt).setZone(clinic.timezone).toISODate() === dayKey)
+      .slice(0, 10);
+  }
+
   if (target) {
     const targetIso = target.toUTC().toISO();
     const exactMatch = available.find((slot) => slot.startsAt === targetIso);
@@ -137,5 +164,5 @@ export async function listAvailableSlots(params: {
     return sorted.slice(0, MAX_OFFERED_SLOTS);
   }
 
-  return available.slice(0, MAX_OFFERED_SLOTS);
+  return available.slice(0, params.limit ?? MAX_OFFERED_SLOTS);
 }
