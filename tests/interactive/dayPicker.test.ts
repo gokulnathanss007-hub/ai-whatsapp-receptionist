@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DateTime } from "luxon";
-import { dayRowId, groupSlotsIntoDayOptions, parseDayRowId } from "@/lib/scheduling/dayPicker";
+import { dayRowId, groupSlotsIntoDayOptions, parseDayRowId, resolveTypedDay } from "@/lib/scheduling/dayPicker";
 import { renderDayPickerText } from "@/lib/scheduling/renderSlotsBlock";
 import { translateTurnToActions } from "@/lib/decision-engine/translateV1";
 import { encodeSlotId } from "@/lib/scheduling/slotId";
@@ -48,6 +48,24 @@ describe("day-first booking: grouping free slots into day options", () => {
     expect(parseDayRowId(dayRowId("2026-07-20"))).toBe("2026-07-20");
     expect(parseDayRowId("menu_book_appointment")).toBeNull();
     expect(parseDayRowId("day_garbage")).toBeNull();
+  });
+});
+
+describe("typed day-only replies resolve like taps (NOW = Friday Jul 17)", () => {
+  const resolve = (text: string) => resolveTypedDay({ text, timezone: TZ, now: NOW });
+
+  it("'today' and 'Tomorrow' resolve to the right dates", () => {
+    expect(resolve("today")).toBe("2026-07-17");
+    expect(resolve("Tomorrow")).toBe("2026-07-18");
+  });
+
+  it("weekday names resolve to the next occurrence", () => {
+    expect(resolve("saturday")).toBe("2026-07-18");
+    expect(resolve("Mon")).toBe("2026-07-20");
+  });
+
+  it("no day mentioned → null (a bare time is not a day pick)", () => {
+    expect(resolve("ok thanks")).toBeNull();
   });
 });
 

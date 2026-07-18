@@ -18,7 +18,7 @@ import {
   renderSlotNotOpenReply,
   renderSlotsPresentation,
 } from "@/lib/scheduling/renderSlotsBlock";
-import { listOpenDays, parseDayRowId, type DayOption } from "@/lib/scheduling/dayPicker";
+import { listOpenDays, parseDayRowId, resolveTypedDay, type DayOption } from "@/lib/scheduling/dayPicker";
 import { listAvailableSlots } from "@/lib/scheduling/listAvailableSlots";
 import { resolveSelectedSlot } from "@/lib/scheduling/recoverSelectedSlot";
 import { formatRequestedLabel, resolveRequestedDateTime } from "@/lib/scheduling/requestedDateTime";
@@ -387,6 +387,14 @@ export const replyPipelineTask = task({
       }
       // Single doctor: straight into the conversational booking flow.
       effectiveBody = "I want to book an appointment";
+      // A fresh booking START must not inherit day/time preferences from an
+      // earlier booking attempt — production bug: "preferred: Today 7:00 PM"
+      // remembered from a test hours earlier made the pipeline treat the
+      // new request as "Today 7 PM stated" and skip the day picker.
+      const cleanedForFreshStart = { ...(conversation.collected_slots as Record<string, unknown>) };
+      delete cleanedForFreshStart.preferred_date;
+      delete cleanedForFreshStart.preferred_time;
+      conversation.collected_slots = cleanedForFreshStart;
     } else if (menuSelection === "menu_consultation_fee" || menuSelection === "menu_treatments") {
       // Fact not configured in clinic knowledge — let the AI handle it
       // (which per the prompt hands off rather than inventing a value).
@@ -415,7 +423,18 @@ export const replyPipelineTask = task({
     //    Day-first booking (PATIENT_EXPERIENCE.md §5): the patient chose a
     //    day from the day picker; show ONLY that day's free times.
     //    Deterministic — no AI call.
-    const tappedDayKey = payload.interactiveReplyId ? parseDayRowId(payload.interactiveReplyId) : null;
+    let tappedDayKey = payload.interactiveReplyId ? parseDayRowId(payload.interactiveReplyId) : null;
+    // Typed equivalent: "Saturday" / "today" typed right after the day
+    // picker resolves like a tap — WITHOUT this, a typed day-only reply
+    // has no time to parse, falls to the generic flow, and the patient
+    // gets the day picker again in a loop (PATIENT_EXPERIENCE.md §6.2).
+    if (!tappedDayKey && conversation.current_screen === "day_picker" && !/\d/.test(payload.body)) {
+      tappedDayKey = resolveTypedDay({
+        text: effectiveBody,
+        timezone: knowledge.profile.timezone,
+        now: new Date(),
+      });
+    }
     if (tappedDayKey && knowledge.profile.auto_confirm_enabled) {
       const daySlots = await listAvailableSlots({ clinicId, dayKey: tappedDayKey });
       if (daySlots && daySlots.length > 0) {
@@ -522,9 +541,20 @@ export const replyPipelineTask = task({
         const bodyMentionsDay =
           /\b(today|tomorrow|now|mon|tue|wed|thu|fri|sat|sun)\w*\b/i.test(effectiveBody) ||
           /\d{1,2}[/\-]\d{1,2}/.test(effectiveBody);
-        if (!bodyResolves && (collectedSlots?.preferred_date || collectedSlots?.preferred_time)) {
+        // The remembered-preferences fallback exists for CONTINUATION turns
+        // ("yes confirm it", a bare "6 pm" after picking a day) — i.e. only
+        // while an offer is actually awaiting the patient's answer. A fresh
+        // booking request must never inherit an old preference — production
+        // bug: "Book Appointment" tapped hours after an earlier test reused
+        // "Today 7:00 PM" and skipped the day picker.
+        const offerAwaitingAnswer = conversation.booking_status === "waiting_for_confirmation";
+        if (
+          offerAwaitingAnswer &&
+          !bodyResolves &&
+          (collectedSlots?.preferred_date || collectedSlots?.preferred_time)
+        ) {
           requestHint = `${collectedSlots?.preferred_date ?? ""} ${collectedSlots?.preferred_time ?? ""}`.trim();
-        } else if (bodyResolves && !bodyMentionsDay && collectedSlots?.preferred_date) {
+        } else if (offerAwaitingAnswer && bodyResolves && !bodyMentionsDay && collectedSlots?.preferred_date) {
           requestHint = `${collectedSlots.preferred_date} ${effectiveBody}`;
         }
 
