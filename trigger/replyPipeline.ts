@@ -817,12 +817,17 @@ export const replyPipelineTask = task({
             availableSlots,
           );
           presentedSlots = availableSlots;
-        } else if (!requestedTarget && knowledge.profile.interactive_enabled) {
+        } else if (
+          !requestedTarget &&
+          knowledge.profile.interactive_enabled &&
+          !["slot_picker", "booking_confirmation"].includes(conversation.current_screen)
+        ) {
           // Day-first booking (PATIENT_EXPERIENCE.md §5): the patient hasn't
           // named a day or time, so ask WHICH DAY before showing times —
           // only days with real free slots appear, so closed days (e.g.
           // Sunday) are impossible. A stated day/time still goes straight
-          // to the exact/nearest time flow above.
+          // to the exact/nearest time flow above; a patient already inside
+          // a day's times never regresses back to the day picker.
           const days = await listOpenDays(clinicId);
           if (days && days.length > 1) {
             finalReply = renderDayPickerText(days);
@@ -879,11 +884,26 @@ export const replyPipelineTask = task({
       // needed broadening twice for that reason); this catches all of them by
       // construction. Re-show the real live options rather than let a
       // fabricated "checking..." reply through.
+      //
+      // Day-first applies here too (self-test finding 2026-07-18: this
+      // branch fired on the qualifying-done turn and pushed a TIME list,
+      // bypassing the day picker) — but never regress to the day picker
+      // when the patient is already inside a day's times or a confirm step.
       logger.error("Model produced a non-actionable reply while slots were offered — replacing with real options", {
         reply: output.reply,
       });
-      finalReply = renderSlotsPresentation(availableSlots ?? [], knowledge.doctors[0]?.name);
-      presentedSlots = availableSlots;
+      const midTimeSelection = ["slot_picker", "booking_confirmation"].includes(conversation.current_screen);
+      let backstopDays: DayOption[] | null = null;
+      if (knowledge.profile.interactive_enabled && !requestedTarget && !midTimeSelection) {
+        backstopDays = await listOpenDays(clinicId);
+      }
+      if (backstopDays && backstopDays.length > 1) {
+        finalReply = renderDayPickerText(backstopDays);
+        presentedDays = backstopDays;
+      } else {
+        finalReply = renderSlotsPresentation(availableSlots ?? [], knowledge.doctors[0]?.name);
+        presentedSlots = availableSlots;
+      }
     }
 
     if (output.booking_selection && !finalHumanHandoff) {
