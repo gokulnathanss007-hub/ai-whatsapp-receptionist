@@ -97,15 +97,20 @@ async function main() {
     console.log("0010 applied (conversations.current_screen)");
   }
 
-  // Pilot rollout: Glow Skin Clinic gets the interactive experience.
+  // Pilot clinic targeted by ID, never by name — the demo clinic was renamed
+  // ("Glow Skin Clinic" → "Medixum Clinic", 2026-07-18) and may be renamed
+  // again for demos; name-based updates silently become no-ops after that.
+  const PILOT_CLINIC_ID = "ff605796-fc70-42cb-b10d-ef67c5b5d092";
+
   const interactive = await client.query(
-    `update clinics set interactive_enabled = true where name = 'Glow Skin Clinic' and interactive_enabled = false returning id`,
+    `update clinics set interactive_enabled = true where id = $1 and interactive_enabled = false returning id`,
+    [PILOT_CLINIC_ID],
   );
-  console.log(interactive.rowCount ? "enabled interactive_enabled for Glow Skin Clinic" : "interactive flag already set — skipped");
+  console.log(interactive.rowCount ? "enabled interactive_enabled for pilot clinic" : "interactive flag already set — skipped");
 
   // Seed working hours (only where still empty, so re-runs never clobber)
-  const seeded = await client.query(`
-    update clinics
+  const seeded = await client.query(
+    `update clinics
     set opening_hours = '{
         "mon": [["10:00", "20:00"]],
         "tue": [["10:00", "20:00"]],
@@ -116,9 +121,11 @@ async function main() {
       }'::jsonb,
       slot_duration_minutes = 30,
       timezone = 'Asia/Kolkata'
-    where name = 'Glow Skin Clinic' and opening_hours = '{}'::jsonb
-    returning id`);
-  console.log(seeded.rowCount ? "seeded Glow Skin Clinic opening_hours" : "opening_hours already set — seed skipped");
+    where id = $1 and opening_hours = '{}'::jsonb
+    returning id`,
+    [PILOT_CLINIC_ID],
+  );
+  console.log(seeded.rowCount ? "seeded pilot clinic opening_hours" : "opening_hours already set — seed skipped");
 
   const clinics = await client.query(`
     select c.id, c.name, c.timezone, c.opening_hours != '{}'::jsonb as has_hours,
