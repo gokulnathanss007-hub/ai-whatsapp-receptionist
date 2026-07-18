@@ -10,8 +10,8 @@ import { Client } from "pg";
 const CLINIC_ID = "ff605796-fc70-42cb-b10d-ef67c5b5d092";
 const NEW_NAME = "Medixum Clinic";
 const NEW_ADDRESS = "No. 1/211, Sourasra Colony Minibus Stand, Meenakshi Nagar, Sakkimangalam, Madurai - 625 201";
-const NEW_MAPS_URL =
-  "https://maps.google.com/?q=Sourasra+Colony+Minibus+Stand,+Meenakshi+Nagar,+Sakkimangalam,+Madurai+625201";
+// The clinic's real Google Maps pin (owner-provided short link).
+const NEW_MAPS_URL = "https://maps.app.goo.gl/RUWQQbPhXMLhmU8J8";
 
 async function main() {
   const raw = readFileSync(path.join(process.cwd(), ".env.local"), "utf-8");
