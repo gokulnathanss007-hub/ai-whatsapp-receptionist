@@ -407,27 +407,21 @@ export const replyPipelineTask = task({
       effectiveBody = menuSelection === "menu_consultation_fee" ? "What is the consultation fee?" : "What treatments do you offer?";
     }
 
-    // 2b) Treatment pick (tap on treatment_<service_key>) → that treatment's
-    //     info + a Book button; the tapped treatment becomes the patient's
-    //     concern so booking never re-asks what they're coming in for.
+    // 2b) Treatment pick (tap on treatment_<service_key>) → just that
+    //     treatment's info, plain reply. Booking already has its own menu
+    //     item — a Book button here was a redundant second path (product
+    //     decision 2026-07-18). The tapped treatment is still quietly saved
+    //     as the patient's concern, so if they DO go on to book, they're
+    //     never re-asked what they're coming in for.
     if (payload.interactiveReplyId?.startsWith("treatment_")) {
       const serviceKey = payload.interactiveReplyId.slice("treatment_".length);
       const service = knowledge.services.find((s) => s.service_key === serviceKey);
       if (service) {
         const info = service.high_level_info ?? `${service.display_name} is one of our treatments.`;
-        const text = `${service.display_name}: ${info}\n\nWould you like to book a consultation?`;
+        const text = `${service.display_name}: ${info}`;
         return deterministicTurn({
-          actions: [
-            {
-              action: "show_buttons",
-              screen: "treatment_info",
-              data: {
-                text,
-                buttons: [{ id: "menu_book_appointment", title: "Book Appointment" }],
-              },
-            },
-          ],
-          textRendering: `${text}\n\nReply "book" to book a consultation.`,
+          actions: [{ action: "reply_text", screen: "treatment_info", data: { text } }],
+          textRendering: text,
           stage: "faq",
           collected: { concern: service.display_name },
           intent: "general_treatment_enquiry",
