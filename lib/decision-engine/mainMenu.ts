@@ -26,14 +26,18 @@ const MENU_ITEM_IDS = new Set(MAIN_MENU_ITEMS.map((item) => item.id));
  * a real person now. Never hardcoded: falls back to the generic message for
  * any clinic that hasn't set a number. Clinic hours are included alongside
  * the number so the patient knows when a call will actually be answered.
+ *
+ * Deliberately does NOT promise "they will reply to you here soon" — there
+ * is no in-thread staff-reply feature built yet, so that line was a promise
+ * the product couldn't keep (product decision 2026-07-21).
  */
 export function renderHandoffText(params: { receptionPhone: string | null; openingHoursText: string | null }): string {
   const { receptionPhone, openingHoursText } = params;
   if (!receptionPhone) {
-    return "I will connect you with our clinic team. They will reply to you here soon.";
+    return "I will connect you with our clinic team.";
   }
   const lines = [
-    "I will connect you with our clinic team. They will reply to you here soon.",
+    "I will connect you with our clinic team.",
     "",
     `📞 You can call our receptionist directly at ${receptionPhone} for immediate assistance.`,
   ];

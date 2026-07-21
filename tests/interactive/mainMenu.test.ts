@@ -129,7 +129,14 @@ describe("renderHandoffText — direct contact number + hours on Talk to Recepti
 
   it("falls back to the generic message when no number is configured (never hardcoded per-clinic)", () => {
     const text = renderHandoffText({ receptionPhone: null, openingHoursText: "Mon-Sat: 10:00 AM-8:00 PM" });
-    expect(text).toBe("I will connect you with our clinic team. They will reply to you here soon.");
+    expect(text).toBe("I will connect you with our clinic team.");
     expect(text).not.toContain("call our receptionist");
+  });
+
+  it("never promises an in-thread staff reply — that feature doesn't exist", () => {
+    expect(renderHandoffText({ receptionPhone: "8778303075", openingHoursText: null })).not.toContain(
+      "reply to you here",
+    );
+    expect(renderHandoffText({ receptionPhone: null, openingHoursText: null })).not.toContain("reply to you here");
   });
 });
