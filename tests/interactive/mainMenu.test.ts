@@ -4,6 +4,7 @@ import {
   isMenuRequest,
   MAIN_MENU_ITEMS,
   renderDoctorList,
+  renderHandoffText,
   renderMainMenu,
   renderMainMenuText,
   resolveMenuSelection,
@@ -110,5 +111,25 @@ describe("confirm-button id round-trip (stateless slot carry)", () => {
     const buttonId = `confirm_slot_${slotId}`;
     expect(buttonId.startsWith("confirm_slot_")).toBe(true);
     expect(buttonId.slice("confirm_slot_".length)).toBe(slotId);
+  });
+});
+
+describe("renderHandoffText — direct contact number + hours on Talk to Receptionist", () => {
+  it("includes the clinic's reception number and hours when both are set", () => {
+    const text = renderHandoffText({ receptionPhone: "8778303075", openingHoursText: "Mon-Sat: 10:00 AM-8:00 PM" });
+    expect(text).toContain("call our receptionist directly at 8778303075 for immediate assistance");
+    expect(text).toContain("We are available: Mon-Sat: 10:00 AM-8:00 PM.");
+  });
+
+  it("includes the number without an hours line when hours aren't known", () => {
+    const text = renderHandoffText({ receptionPhone: "8778303075", openingHoursText: null });
+    expect(text).toContain("8778303075");
+    expect(text).not.toContain("We are available");
+  });
+
+  it("falls back to the generic message when no number is configured (never hardcoded per-clinic)", () => {
+    const text = renderHandoffText({ receptionPhone: null, openingHoursText: "Mon-Sat: 10:00 AM-8:00 PM" });
+    expect(text).toBe("I will connect you with our clinic team. They will reply to you here soon.");
+    expect(text).not.toContain("call our receptionist");
   });
 });

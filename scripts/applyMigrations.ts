@@ -97,6 +97,14 @@ async function main() {
     console.log("0010 applied (conversations.current_screen)");
   }
 
+  // 0011 — clinics.reception_phone (direct contact number on handoff)
+  if (await columnExists(client, "clinics", "reception_phone")) {
+    console.log("0011 already applied — skipping");
+  } else {
+    await client.query(migration("0011_clinic_reception_phone.sql"));
+    console.log("0011 applied (clinics.reception_phone)");
+  }
+
   // Pilot clinic targeted by ID, never by name — the demo clinic was renamed
   // ("Glow Skin Clinic" → "Medixum Clinic", 2026-07-18) and may be renamed
   // again for demos; name-based updates silently become no-ops after that.

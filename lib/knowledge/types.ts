@@ -33,6 +33,7 @@ export const clinicProfileSchema = z.object({
   rescheduling_policy: z.string().nullable(),
   auto_confirm_enabled: z.boolean(),
   interactive_enabled: z.boolean(),
+  reception_phone: z.string().nullable(),
   opening_hours: openingHoursSchema,
   slot_duration_minutes: z.number().int(),
   timezone: z.string(),

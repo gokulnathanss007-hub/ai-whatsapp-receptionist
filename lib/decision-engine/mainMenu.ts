@@ -19,6 +19,28 @@ export const MAIN_MENU_ITEMS: ListRow[] = [
 
 const MENU_ITEM_IDS = new Set(MAIN_MENU_ITEMS.map((item) => item.id));
 
+/**
+ * "Talk to Receptionist" handoff text — includes a direct contact number
+ * when the clinic has one configured (clinics.reception_phone), so the
+ * patient isn't just told "staff will reply here soon" with no way to reach
+ * a real person now. Never hardcoded: falls back to the generic message for
+ * any clinic that hasn't set a number. Clinic hours are included alongside
+ * the number so the patient knows when a call will actually be answered.
+ */
+export function renderHandoffText(params: { receptionPhone: string | null; openingHoursText: string | null }): string {
+  const { receptionPhone, openingHoursText } = params;
+  if (!receptionPhone) {
+    return "I will connect you with our clinic team. They will reply to you here soon.";
+  }
+  const lines = [
+    "I will connect you with our clinic team. They will reply to you here soon.",
+    "",
+    `📞 You can call our receptionist directly at ${receptionPhone} for immediate assistance.`,
+  ];
+  if (openingHoursText) lines.push(`🕒 We are available: ${openingHoursText}.`);
+  return lines.join("\n");
+}
+
 // Deliberately strict: the whole message must be a greeting (plus emoji/
 // punctuation), so "Hi, what's the fee?" NEVER gets a menu — a stated
 // intent is always answered directly (PATIENT_EXPERIENCE.md §3 "do not

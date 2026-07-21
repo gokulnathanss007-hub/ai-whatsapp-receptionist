@@ -45,6 +45,7 @@ import {
   isMenuRequest,
   MAIN_MENU_ITEMS,
   renderDoctorList,
+  renderHandoffText,
   renderMainMenu,
   renderMainMenuText,
   renderTreatmentsList,
@@ -321,7 +322,10 @@ export const replyPipelineTask = task({
     });
     let effectiveBody = payload.body;
     if (menuSelection === "menu_talk_to_human") {
-      const reply = "I will connect you with our clinic team. They will reply to you here soon.";
+      const reply = renderHandoffText({
+        receptionPhone: knowledge.profile.reception_phone,
+        openingHoursText: formatOpeningHours(knowledge.profile.opening_hours) ?? knowledge.profile.timings,
+      });
       return deterministicTurn({
         actions: [{ action: "handoff", screen: "handoff", data: { reason: "explicit_request" } }],
         textRendering: reply,
