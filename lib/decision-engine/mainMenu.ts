@@ -143,13 +143,14 @@ export function renderSchoolServicesList(services: SchoolService[]): Extract<Act
   };
 }
 
-// ── Facilities — a single terminal text reply, not an interactive picker
-// (product decision 2026-07-24). Categories are static/product-level, same
+// ── Facilities — a static category list, not per-school knowledge (same
 // reasoning as MAIN_MENU_ITEMS: the list of facility TYPES a school can have
-// is a fixed product shape, not per-school knowledge. "Back to Main Menu" is
-// the only functional option (isFacilitiesBackSelection) — the other 8 are
-// informational only for now.
-const FACILITIES_TEXT =
+// is a fixed product shape). The 8 categories are informational only for
+// now; "Back to Main Menu" is the one functional option — a real tappable
+// button for interactive schools (renderFacilitiesButtons), a numbered "9"
+// fallback for text-only ones (renderFacilitiesText), product decision
+// 2026-07-24.
+const FACILITIES_BODY =
   "🏫 *Facilities*\n\n" +
   "1️⃣ 🖥️ Smart Classrooms\n\n" +
   "2️⃣ 📚 Library\n\n" +
@@ -158,14 +159,23 @@ const FACILITIES_TEXT =
   "5️⃣ 🚌 Transport\n\n" +
   "6️⃣ 🏠 Hostel\n\n" +
   "7️⃣ 🛡️ Safety & Security\n\n" +
-  "8️⃣ ✨ Other Facilities\n\n" +
-  "9️⃣ 🔙 Back to Main Menu";
+  "8️⃣ ✨ Other Facilities";
+
+export const FACILITIES_BACK_BUTTON_ID = "facilities_back_main";
 
 export function renderFacilitiesText(): string {
-  return FACILITIES_TEXT;
+  return `${FACILITIES_BODY}\n\n9️⃣ 🔙 Back to Main Menu`;
 }
 
-/** True when the parent typed "9" while the Facilities list was the last screen shown. */
+export function renderFacilitiesButtons(): Extract<Action, { action: "show_buttons" }> {
+  return {
+    action: "show_buttons",
+    screen: "facilities_menu",
+    data: { text: FACILITIES_BODY, buttons: [{ id: FACILITIES_BACK_BUTTON_ID, title: "🔙 Main Menu" }] },
+  };
+}
+
+/** True when the parent typed "9" while the Facilities list was the last screen shown (text-only fallback — interactive schools use the real button's id instead). */
 export function isFacilitiesBackSelection(body: string): boolean {
   return /^\s*9\s*$/.test(body.trim());
 }

@@ -43,9 +43,11 @@ import { sendWhatsAppTextMessage } from "@/lib/whatsapp/sendMessage";
 import { executeActionsOnWhatsApp } from "@/lib/whatsapp/channelAdapter";
 import { translateTurnToActions } from "@/lib/decision-engine/translateV1";
 import {
+  FACILITIES_BACK_BUTTON_ID,
   isFacilitiesBackSelection,
   isGreetingOnly,
   isMenuRequest,
+  renderFacilitiesButtons,
   renderFacilitiesText,
   renderHandoffText,
   renderMainMenu,
@@ -417,8 +419,11 @@ export const replyPipelineTask = task({
       });
     } else if (menuSelection === "menu_facilities") {
       const reply = renderFacilitiesText();
+      const actions: Action[] = knowledge.profile.interactive_enabled
+        ? [renderFacilitiesButtons()]
+        : [{ action: "reply_text", screen: "facilities_menu", data: { text: reply } }];
       return deterministicTurn({
-        actions: [{ action: "reply_text", screen: "facilities_menu", data: { text: reply } }],
+        actions,
         textRendering: reply,
         stage: "faq",
         intent: "facilities",
@@ -553,10 +558,14 @@ export const replyPipelineTask = task({
       return deterministicTurn({ actions, textRendering: menuText, stage: "greeting", intent: "greeting" });
     };
 
-    // Facilities' only functional option: typing "9" while its list is the
-    // last screen shown returns to the Main Menu (product decision
-    // 2026-07-24) — the other 8 numbered items are informational only.
-    if (conversation.current_screen === "facilities_menu" && isFacilitiesBackSelection(payload.body)) {
+    // Facilities' only functional option: tapping the "🔙 Main Menu" button
+    // (interactive schools) or typing "9" while its list is the last screen
+    // shown (text-only fallback) returns to the Main Menu (product decision
+    // 2026-07-24) — the other 8 items are informational only.
+    if (
+      conversation.current_screen === "facilities_menu" &&
+      (payload.interactiveReplyId === FACILITIES_BACK_BUTTON_ID || isFacilitiesBackSelection(payload.body))
+    ) {
       return renderMainMenuScreen();
     }
 
