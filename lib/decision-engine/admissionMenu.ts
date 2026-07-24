@@ -77,7 +77,7 @@ export function resolveAdmissionMenuSelection(params: SelectionInput): string | 
 
 const ADMISSION_MENU_INTRO =
   "🎓 *Admission Enquiry*\n\n" +
-  "Welcome to the Admission Desk.\n\n" +
+  "Welcome to the Admission Desk.\n" +
   "I'd be happy to help you.\n\n" +
   "Please choose an option below.";
 
