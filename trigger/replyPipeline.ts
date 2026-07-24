@@ -62,14 +62,22 @@ import {
   isSkipMessage,
   renderAdmissionMenu,
   renderAdmissionMenuText,
+  renderAdmissionProcess,
   renderAdmissionProcessText,
+  renderAdmissionStatus,
   renderAdmissionStatusText,
   renderAskClass,
   renderAskClassText,
+  renderAskParentName,
   renderAskParentNameText,
+  renderRequiredDocuments,
   renderRequiredDocumentsText,
   resolveAdmissionMenuSelection,
+  resolveAdmissionOfficeContinueSelection,
+  resolveAdmissionOpenContinueSelection,
+  resolveAdmissionProcessContinueSelection,
   resolveAskClassSelection,
+  resolveRequiredDocumentsContinueSelection,
 } from "@/lib/decision-engine/admissionMenu";
 import type { Action } from "@/lib/decision-engine/types";
 import { formatOpeningHours } from "@/lib/scheduling/formatOpeningHours";
@@ -574,32 +582,59 @@ export const replyPipelineTask = task({
       // parent who'd rather just call isn't only offered the WhatsApp form
       // (product decision 2026-07-23) — same phone/hours source as the main
       // "Contact School Office" handoff (lib/decision-engine/mainMenu.ts).
-      const askText = renderAskParentNameText({
+      const params = {
         receptionPhone: knowledge.profile.reception_phone,
         openingHoursText: formatOpeningHours(knowledge.profile.opening_hours) ?? knowledge.profile.timings,
-      });
-      return admissionScreenTurn({ interactive: null, text: askText, screen: "admission_collect_parent_name" });
+      };
+      return admissionScreenTurn({ interactive: renderAskParentName(params), text: renderAskParentNameText(params), screen: "admission_collect_parent_name" });
     };
 
-    // 1) Top-level Admission Desk menu picks — each info item is a single,
-    // terminal text reply (product decision 2026-07-24): no follow-on
-    // "Continue"/"Need help?" list chaining one screen into the next, which
-    // left parents stuck in an endless menu-in-menu loop with no ending
-    // point. The parent can always type "menu" or ask a follow-up question.
+    // 1) Top-level Admission Desk menu picks. Each info screen shows a
+    // "continue" list of what's left to explore next, ending in Back to Main
+    // Menu (product decision 2026-07-24) — reusing the SAME row ids as
+    // ADMISSION_MENU_ITEMS means a tap on any of them is already routed
+    // correctly right here, regardless of which screen the parent is
+    // actually on; only a typed digit needs the per-screen resolvers below.
     const admSelection = resolveAdmissionMenuSelection(admissionSelectionInput);
     if (admSelection === "adm_back_main") {
       return renderMainMenuScreen();
     } else if (admSelection === "adm_open") {
-      return admissionScreenTurn({ interactive: null, text: renderAdmissionStatusText(), screen: "admission_open_result" });
+      return admissionScreenTurn({ interactive: renderAdmissionStatus(), text: renderAdmissionStatusText(), screen: "admission_open_result" });
     } else if (admSelection === "adm_process") {
-      return admissionScreenTurn({ interactive: null, text: renderAdmissionProcessText(), screen: "admission_process" });
+      return admissionScreenTurn({ interactive: renderAdmissionProcess(), text: renderAdmissionProcessText(), screen: "admission_process" });
     } else if (admSelection === "adm_documents") {
-      return admissionScreenTurn({ interactive: null, text: renderRequiredDocumentsText(), screen: "admission_documents" });
+      return admissionScreenTurn({ interactive: renderRequiredDocuments(), text: renderRequiredDocumentsText(), screen: "admission_documents" });
     } else if (admSelection === "adm_talk_office") {
       return startAdmissionOfficeCollection();
     }
 
-    // 2) "Talk to Admission Office" — one question at a time, no AI call.
+    // 2) Typed-digit continuation fallback (text-only schools) — interactive
+    // taps on these same ids already returned above via admSelection.
+    if (conversation.current_screen === "admission_open_result") {
+      const sel = resolveAdmissionOpenContinueSelection(admissionSelectionInput);
+      if (sel === "adm_process") return admissionScreenTurn({ interactive: renderAdmissionProcess(), text: renderAdmissionProcessText(), screen: "admission_process" });
+      if (sel === "adm_documents") return admissionScreenTurn({ interactive: renderRequiredDocuments(), text: renderRequiredDocumentsText(), screen: "admission_documents" });
+      if (sel === "adm_talk_office") return startAdmissionOfficeCollection();
+      if (sel === "adm_back_main") return renderMainMenuScreen();
+    }
+    if (conversation.current_screen === "admission_process") {
+      const sel = resolveAdmissionProcessContinueSelection(admissionSelectionInput);
+      if (sel === "adm_documents") return admissionScreenTurn({ interactive: renderRequiredDocuments(), text: renderRequiredDocumentsText(), screen: "admission_documents" });
+      if (sel === "adm_talk_office") return startAdmissionOfficeCollection();
+      if (sel === "adm_back_main") return renderMainMenuScreen();
+    }
+    if (conversation.current_screen === "admission_documents") {
+      const sel = resolveRequiredDocumentsContinueSelection(admissionSelectionInput);
+      if (sel === "adm_talk_office") return startAdmissionOfficeCollection();
+      if (sel === "adm_back_main") return renderMainMenuScreen();
+    }
+
+    // 3) "Talk to Admission Office" — one question at a time, no AI call.
+    //    A typed digit "1" here means "Back to Main Menu" (its only
+    //    continuation option) rather than the parent's actual name.
+    if (conversation.current_screen === "admission_collect_parent_name" && resolveAdmissionOfficeContinueSelection(admissionSelectionInput) === "adm_back_main") {
+      return renderMainMenuScreen();
+    }
     if (conversation.current_screen === "admission_collect_parent_name") {
       const name = payload.body.trim();
       if (!name) {

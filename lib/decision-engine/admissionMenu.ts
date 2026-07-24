@@ -27,6 +27,23 @@ export const ADMISSION_MENU_ITEMS: ListRow[] = [
   { id: "adm_back_main", title: "Back to Main Menu", description: "Return to the main menu" },
 ];
 
+/**
+ * "What's left to explore" continuation rows shown after each info screen
+ * (product decision 2026-07-24) — every item AFTER `afterId` in the fixed
+ * ADMISSION_MENU_ITEMS order, so "Is Admission Open?" offers 4 more options,
+ * "Admission Process" offers 3, "Required Documents" offers 2, and starting
+ * "Talk to Admission Office" offers just "Back to Main Menu". Reuses the SAME
+ * row ids as ADMISSION_MENU_ITEMS, so a tap on any of them is already routed
+ * correctly by the top-level admSelection check in replyPipeline.ts
+ * regardless of which screen the parent is actually on — no separate tap
+ * handling needed, only a per-screen typed-digit resolver for text-only
+ * schools (see the resolve*ContinueSelection functions below).
+ */
+function continueMenuRows(afterId: string): ListRow[] {
+  const index = ADMISSION_MENU_ITEMS.findIndex((item) => item.id === afterId);
+  return ADMISSION_MENU_ITEMS.slice(index + 1);
+}
+
 /** Generic: resolves a tap or typed digit (1-N) against a known row list, only when currentScreen matches. Mirrors resolveMenuSelection in mainMenu.ts. */
 export function resolveListSelection(params: {
   body: string;
@@ -60,6 +77,13 @@ function renderListAction(params: { screen: Action["screen"]; text: string; butt
 function renderNumberedText(intro: string, rows: ListRow[], outro: string): string {
   const lines = rows.map((row, i) => `${i + 1}. ${row.title}`);
   return `${intro}\n\n${lines.join("\n")}\n\n${outro}`;
+}
+
+const DIVIDER = "━━━━━━━━━━━━━━";
+
+/** Interactive-mode trailer: a divider, the "need help" heading, then a hint to tap the (already "Continue"-labeled) list button. */
+function continueTrailer(heading: string): string {
+  return `${DIVIDER}\n\n${heading}\n\nTap *Continue* below.`;
 }
 
 interface SelectionInput {
@@ -130,11 +154,22 @@ const ADMISSION_STATUS_BODY =
   "🎓 Senior Secondary (Grades 11 & 12) — April to May.\n\n" +
   "(The Senior Secondary window opens immediately after Class 10 Board Exam results are announced.)";
 
-// Terminal reply (product decision 2026-07-24): no follow-on "Continue" list
-// — chaining screen after screen left parents stuck in a menu loop with no
-// ending point. The parent can always type "menu" or ask a follow-up question.
+export function renderAdmissionStatus(): Extract<Action, { action: "show_list" }> {
+  return renderListAction({
+    screen: "admission_open_result",
+    text: `${ADMISSION_STATUS_BODY}\n\n${continueTrailer("How would you like to continue?")}`,
+    buttonLabel: "Continue",
+    sectionTitle: "Next step",
+    rows: continueMenuRows("adm_open"),
+  });
+}
+
 export function renderAdmissionStatusText(): string {
-  return ADMISSION_STATUS_BODY;
+  return renderNumberedText(`${ADMISSION_STATUS_BODY}\n\nHow would you like to continue?`, continueMenuRows("adm_open"), "Reply with a number.");
+}
+
+export function resolveAdmissionOpenContinueSelection(params: SelectionInput): string | null {
+  return resolveListSelection({ ...params, expectedScreen: "admission_open_result", rows: continueMenuRows("adm_open") });
 }
 
 // ── Admission Process ────────────────────────────────────────────────────────
@@ -156,8 +191,22 @@ const ADMISSION_PROCESS_BODY =
   "4️⃣ After approval, complete the admission fee payment.\n\n" +
   "5️⃣ 🎉 Admission confirmed!";
 
+export function renderAdmissionProcess(): Extract<Action, { action: "show_list" }> {
+  return renderListAction({
+    screen: "admission_process",
+    text: `${ADMISSION_PROCESS_BODY}\n\n${continueTrailer("Need more help?")}`,
+    buttonLabel: "Continue",
+    sectionTitle: "Need further assistance?",
+    rows: continueMenuRows("adm_process"),
+  });
+}
+
 export function renderAdmissionProcessText(): string {
-  return ADMISSION_PROCESS_BODY;
+  return renderNumberedText(`${ADMISSION_PROCESS_BODY}\n\nNeed more help?`, continueMenuRows("adm_process"), "Reply with a number.");
+}
+
+export function resolveAdmissionProcessContinueSelection(params: SelectionInput): string | null {
+  return resolveListSelection({ ...params, expectedScreen: "admission_process", rows: continueMenuRows("adm_process") });
 }
 
 // ── Required Documents ───────────────────────────────────────────────────────
@@ -171,8 +220,22 @@ const REQUIRED_DOCUMENTS_BODY =
   "• Transfer Certificate (if applicable)\n\n" +
   "• Previous Academic Mark Sheet (if applicable)";
 
+export function renderRequiredDocuments(): Extract<Action, { action: "show_list" }> {
+  return renderListAction({
+    screen: "admission_documents",
+    text: `${REQUIRED_DOCUMENTS_BODY}\n\n${continueTrailer("Need further assistance?")}`,
+    buttonLabel: "Continue",
+    sectionTitle: "Further assistance",
+    rows: continueMenuRows("adm_documents"),
+  });
+}
+
 export function renderRequiredDocumentsText(): string {
-  return REQUIRED_DOCUMENTS_BODY;
+  return renderNumberedText(`${REQUIRED_DOCUMENTS_BODY}\n\nNeed further assistance?`, continueMenuRows("adm_documents"), "Reply with a number.");
+}
+
+export function resolveRequiredDocumentsContinueSelection(params: SelectionInput): string | null {
+  return resolveListSelection({ ...params, expectedScreen: "admission_documents", rows: continueMenuRows("adm_documents") });
 }
 
 // ── Talk to Admission Office — one question at a time ───────────────────────
@@ -185,7 +248,7 @@ export function renderRequiredDocumentsText(): string {
  * set a number. Mirrors renderHandoffText's phone/hours pattern in
  * mainMenu.ts (product decision 2026-07-23).
  */
-export function renderAskParentNameText(params: { receptionPhone: string | null; openingHoursText: string | null }): string {
+function askParentNameBody(params: { receptionPhone: string | null; openingHoursText: string | null }): string {
   const lines = ["🙋 Sure, let's get your admission enquiry started."];
   if (params.receptionPhone) {
     lines.push("", `📞 You can also call our admission office directly at ${params.receptionPhone}.`);
@@ -198,6 +261,25 @@ export function renderAskParentNameText(params: { receptionPhone: string | null;
   }
   lines.push("", "What is your name?");
   return lines.join("\n");
+}
+
+/** Interactive variant — adds the "Back to Main Menu" continuation option (product decision 2026-07-24) so a parent who opens the collector isn't stuck if they change their mind. */
+export function renderAskParentName(params: { receptionPhone: string | null; openingHoursText: string | null }): Extract<Action, { action: "show_list" }> {
+  return renderListAction({
+    screen: "admission_collect_parent_name",
+    text: `${askParentNameBody(params)}\n\n${continueTrailer("Changed your mind?")}`,
+    buttonLabel: "Continue",
+    sectionTitle: "Other options",
+    rows: continueMenuRows("adm_talk_office"),
+  });
+}
+
+export function renderAskParentNameText(params: { receptionPhone: string | null; openingHoursText: string | null }): string {
+  return renderNumberedText(`${askParentNameBody(params)}\n\nChanged your mind?`, continueMenuRows("adm_talk_office"), "Reply with a number, or just type your name to continue.");
+}
+
+export function resolveAdmissionOfficeContinueSelection(params: SelectionInput): string | null {
+  return resolveListSelection({ ...params, expectedScreen: "admission_collect_parent_name", rows: continueMenuRows("adm_talk_office") });
 }
 export const ASK_STUDENT_NAME_TEXT = "Thank you!\n\nWhat is your child's name?";
 const ASK_CLASS_INTRO = "Which class are you applying for?";
