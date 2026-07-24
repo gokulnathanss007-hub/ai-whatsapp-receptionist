@@ -21,7 +21,7 @@ const LIST_ROW_DESCRIPTION_MAX = 72;
 
 /**
  * Generic list-message builder — the single place Meta list limits are
- * enforced for EVERY list screen (main menu, doctor selection, slot picker).
+ * enforced for EVERY list screen (main menu, program/grade list, slot picker).
  * Pure; exported for limit-enforcement unit tests.
  */
 export function buildListMessagePayload(params: {
@@ -152,7 +152,7 @@ export async function sendWhatsAppButtons(params: {
   );
 }
 
-/** Sends a generic list message (main menu, doctor selection, …). Session message — 24h window only. */
+/** Sends a generic list message (main menu, program/grade list, …). Session message — 24h window only. */
 export async function sendWhatsAppListMessage(params: {
   phoneNumberId: string;
   to: string;

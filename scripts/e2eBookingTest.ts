@@ -17,14 +17,16 @@ for (const line of raw.split(/\r?\n/)) {
   if (m && !process.env[m[1]!]) process.env[m[1]!] = m[2]!;
 }
 
-const BASE = "https://medixum-whatsapp-receptionist.vercel.app";
-const CLINIC_ID = "ff605796-fc70-42cb-b10d-ef67c5b5d092";
+// NOTE: BASE and SCHOOL_ID are stale clinic-era pilot values — point these at
+// a real deployed URL and a real schools.id before running this script.
+const BASE = "https://school-parent-enquiry-ai.vercel.app";
+const SCHOOL_ID = "ff605796-fc70-42cb-b10d-ef67c5b5d092";
 const TOKEN = process.env.ADMIN_SETUP_TOKEN!;
 
 interface Slot { id: string; startsAt: string; endsAt: string; label: string }
 
 async function getSlots(): Promise<Slot[]> {
-  const res = await fetch(`${BASE}/api/scheduling/slots?clinic_id=${CLINIC_ID}&days_ahead=2&admin_token=${TOKEN}`);
+  const res = await fetch(`${BASE}/api/scheduling/slots?school_id=${SCHOOL_ID}&days_ahead=2&admin_token=${TOKEN}`);
   const json = (await res.json()) as { available: boolean; slots?: Slot[] };
   if (!json.available) throw new Error("Slots endpoint says calendar unavailable");
   return json.slots ?? [];
@@ -35,7 +37,7 @@ async function book(slotId: string): Promise<Record<string, unknown>> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      clinic_id: CLINIC_ID,
+      school_id: SCHOOL_ID,
       slot_id: slotId,
       name: "E2E TEST (auto)",
       mobile: "+919999999902",
@@ -86,9 +88,9 @@ async function main() {
   if (googleEventId) {
     const { google } = await import("googleapis");
     const { getValidGoogleClient } = await import("@/lib/google/tokenManager");
-    const { getClinicGoogleAccount } = await import("@/lib/supabase/queries");
-    const client = await getValidGoogleClient(CLINIC_ID);
-    const account = await getClinicGoogleAccount(CLINIC_ID);
+    const { getSchoolGoogleAccount } = await import("@/lib/supabase/queries");
+    const client = await getValidGoogleClient(SCHOOL_ID);
+    const account = await getSchoolGoogleAccount(SCHOOL_ID);
     if (client && account) {
       const calendar = google.calendar({ version: "v3", auth: client });
       await calendar.events.delete({ calendarId: account.calendar_id, eventId: googleEventId });

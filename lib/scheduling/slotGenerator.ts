@@ -70,7 +70,7 @@ function setTimeOfDay(day: DateTime, hhmm: string): DateTime {
   // "24:00" means end-of-day (midnight into the next day) — luxon rejects
   // hour 24, and without this a working-hours range ending at midnight
   // (e.g. ["23:00","24:00"]) would silently generate zero slots, dropping
-  // the clinic's last bookable slot of the day (23:30–00:00).
+  // the school's last bookable slot of the day (23:30–00:00).
   if (hour === 24 && (minute ?? 0) === 0) {
     return day.plus({ days: 1 }).startOf("day");
   }

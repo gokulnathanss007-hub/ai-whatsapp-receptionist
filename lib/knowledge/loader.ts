@@ -1,65 +1,62 @@
 import {
-  getClinic,
-  getClinicDoctors,
-  getClinicFaqs,
-  getClinicServices,
+  getSchool,
+  getSchoolStaff,
+  getSchoolFaqs,
+  getSchoolServices,
 } from "@/lib/supabase/queries";
 import {
-  clinicDoctorSchema,
-  clinicFaqEntrySchema,
-  clinicProfileSchema,
-  clinicServiceSchema,
-  type ClinicKnowledge,
+  schoolStaffSchema,
+  schoolFaqEntrySchema,
+  schoolProfileSchema,
+  schoolServiceSchema,
+  type SchoolKnowledge,
 } from "@/lib/knowledge/types";
 import { formatOpeningHours } from "@/lib/scheduling/formatOpeningHours";
 
 /**
- * Loads a clinic's full knowledge (profile, doctors, services, FAQs) from
+ * Loads a school's full knowledge (profile, staff, services, FAQs) from
  * Supabase and validates every row. Callers should key any caching on
- * `clinicId` + `profile.knowledge_version` — see /docs/KNOWLEDGE_STRUCTURE.md §7.
+ * `schoolId` + `profile.knowledge_version` — see /docs/03-engineering/KNOWLEDGE_STRUCTURE.md §7.
  */
-export async function loadClinicKnowledge(clinicId: string): Promise<ClinicKnowledge> {
-  const [clinicRow, doctorRows, serviceRows, faqRows] = await Promise.all([
-    getClinic(clinicId),
-    getClinicDoctors(clinicId),
-    getClinicServices(clinicId),
-    getClinicFaqs(clinicId),
+export async function loadSchoolKnowledge(schoolId: string): Promise<SchoolKnowledge> {
+  const [schoolRow, staffRows, serviceRows, faqRows] = await Promise.all([
+    getSchool(schoolId),
+    getSchoolStaff(schoolId),
+    getSchoolServices(schoolId),
+    getSchoolFaqs(schoolId),
   ]);
 
-  if (!clinicRow) {
-    throw new Error(`No clinic found for id ${clinicId}`);
+  if (!schoolRow) {
+    throw new Error(`No school found for id ${schoolId}`);
   }
 
-  const profile = clinicProfileSchema.parse(clinicRow);
-  const doctors = doctorRows.map((d) => clinicDoctorSchema.parse(d));
-  const services = serviceRows.map((s) => clinicServiceSchema.parse(s));
-  const faqs = faqRows.map((f) => clinicFaqEntrySchema.parse(f));
+  const profile = schoolProfileSchema.parse(schoolRow);
+  const staff = staffRows.map((s) => schoolStaffSchema.parse(s));
+  const services = serviceRows.map((s) => schoolServiceSchema.parse(s));
+  const faqs = faqRows.map((f) => schoolFaqEntrySchema.parse(f));
 
-  return { profile, doctors, services, faqs };
+  return { profile, staff, services, faqs };
 }
 
-/** Renders the clinic knowledge block injected into the system prompt. */
-export function renderClinicKnowledgeBlock(knowledge: ClinicKnowledge): string {
-  const { profile, doctors, services, faqs } = knowledge;
+/** Renders the school knowledge block injected into the system prompt. */
+export function renderSchoolKnowledgeBlock(knowledge: SchoolKnowledge): string {
+  const { profile, staff, services, faqs } = knowledge;
   const lines: string[] = [];
 
-  lines.push("CLINIC KNOWLEDGE");
-  lines.push(`Clinic: ${profile.name}${profile.city ? ` (${profile.city})` : ""}`);
+  lines.push("SCHOOL KNOWLEDGE");
+  lines.push(`School: ${profile.name}${profile.city ? ` (${profile.city})` : ""}`);
   if (profile.address) lines.push(`Address: ${profile.address}`);
   if (profile.maps_url) lines.push(`Maps: ${profile.maps_url}`);
   // opening_hours is the single source of truth also used to generate
   // bookable Google Calendar slots (see lib/scheduling/listAvailableSlots.ts)
   // — deriving the stated timings from it means the receptionist can never
   // quote hours the booking engine doesn't actually honor. Falls back to the
-  // freeform `timings` text only for clinics with no structured hours set.
+  // freeform `timings` text only for schools with no structured hours set.
   const derivedTimings = formatOpeningHours(profile.opening_hours);
   const timingsText = derivedTimings ?? profile.timings;
   if (timingsText) lines.push(`Timings: ${timingsText}`);
   if (profile.parking_info) lines.push(`Parking: ${profile.parking_info}`);
   lines.push(`Languages: ${profile.languages.join(", ") || "English"}.`);
-  if (profile.consultation_fee !== null) {
-    lines.push(`Consultation fee: ₹${profile.consultation_fee}.`);
-  }
   if (profile.payment_methods.length > 0) {
     lines.push(`Payment methods: ${profile.payment_methods.join(", ")}.`);
   }
@@ -67,20 +64,20 @@ export function renderClinicKnowledgeBlock(knowledge: ClinicKnowledge): string {
   if (profile.cancellation_policy) lines.push(`Cancellation: ${profile.cancellation_policy}`);
   if (profile.rescheduling_policy) lines.push(`Rescheduling: ${profile.rescheduling_policy}`);
   lines.push(
-    `Auto-confirm appointments: ${profile.auto_confirm_enabled ? "YES" : "NO"}${
-      profile.auto_confirm_enabled ? "." : " (record requests; staff confirm)."
+    `Auto-confirm visits: ${profile.auto_confirm_enabled ? "YES" : "NO"}${
+      profile.auto_confirm_enabled ? "." : " (record requests; office confirms)."
     }`,
   );
 
-  if (doctors.length > 0) {
-    lines.push("", "Doctors:");
-    for (const doctor of doctors) {
-      lines.push(`- ${doctor.name}${doctor.role ? ` — ${doctor.role}` : ""}`);
+  if (staff.length > 0) {
+    lines.push("", "Staff:");
+    for (const member of staff) {
+      lines.push(`- ${member.name}${member.role ? ` — ${member.role}` : ""}`);
     }
   }
 
   if (services.length > 0) {
-    lines.push("", "Services offered (high-level only):");
+    lines.push("", "Programs offered (high-level only):");
     for (const service of services) {
       lines.push(
         `- ${service.display_name}${service.high_level_info ? ` — ${service.high_level_info}` : ""}`,
@@ -99,7 +96,7 @@ export function renderClinicKnowledgeBlock(knowledge: ClinicKnowledge): string {
   return lines.join("\n");
 }
 
-/** Cache key that must invalidate whenever clinic knowledge changes. */
-export function knowledgeCacheKey(clinicId: string, knowledgeVersion: number): string {
-  return `${clinicId}:${knowledgeVersion}`;
+/** Cache key that must invalidate whenever school knowledge changes. */
+export function knowledgeCacheKey(schoolId: string, knowledgeVersion: number): string {
+  return `${schoolId}:${knowledgeVersion}`;
 }

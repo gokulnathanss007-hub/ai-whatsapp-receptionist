@@ -22,7 +22,7 @@ All under `tests/scheduling/` — the booking engine is the highest-risk surface
 |---|---|
 | `ambiguousRequests.test.ts` | Vague datetime text ("after 5", "tomorrow evening", "12/8 at 5 PM") ever resolving to a guessed booking — resolves `null` by design |
 | `requestedDateTime.test.ts` | Day/time cue parsing rules ("next Monday" skips today; missing day = today) |
-| `timeMatch.test.ts` | Matching patient free-text answers to offered slots |
+| `timeMatch.test.ts` | Matching parent free-text answers to offered slots |
 | `recoverSelectedSlot.test.ts` | Resolving "the 4:30 one"-style references against the last presented list |
 | `slotIntegrity.test.ts` | Model-echoed slot ids verified against real generated slots (never invented) |
 | `timezone.test.ts` | Same instant preserved across local-midnight/UTC boundaries (23:30–00:00 slot case) |
@@ -38,7 +38,7 @@ All under `tests/scheduling/` — the booking engine is the highest-risk surface
    alternatives) that no mock would have caught. Concurrency claims are tested with
    real races, not reasoning.
 4. **Live end-to-end (pre-release):** real model + real Calendar against the pilot
-   clinic seed — the Phase 4 E2E found two real model-behaviour bugs (double-populated
+   school seed — the Phase 4 E2E found two real model-behaviour bugs (double-populated
    output fields; verified id echoing). Cleaned up after.
 5. **Conversation regression sample (manual, staff-reviewed):** curated transcripts
    covering FAQ / qualification / booking / handoff / ambiguity / off-topic — re-run on

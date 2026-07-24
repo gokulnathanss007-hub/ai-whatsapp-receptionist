@@ -1,22 +1,22 @@
 import { getGoogleOAuthClient } from "@/lib/google/oauthClient";
 import { decryptToken, encryptToken } from "@/lib/google/tokenCrypto";
 import {
-  getClinicGoogleAccount,
-  markClinicGoogleAccountError,
-  updateClinicGoogleAccountTokens,
+  getSchoolGoogleAccount,
+  markSchoolGoogleAccountError,
+  updateSchoolGoogleAccountTokens,
 } from "@/lib/supabase/queries";
 
 /**
- * Returns an authenticated OAuth2Client for a clinic's connected Google
+ * Returns an authenticated OAuth2Client for a school's connected Google
  * account, refreshing the access token first if it's expired. Returns null
- * if the clinic has no connection, or if the refresh itself fails (e.g. the
- * clinic revoked access) — in which case sync_status is set to 'error' so
+ * if the school has no connection, or if the refresh itself fails (e.g. the
+ * school revoked access) — in which case sync_status is set to 'error' so
  * callers can fall back gracefully rather than throw.
  */
 export async function getValidGoogleClient(
-  clinicId: string,
+  schoolId: string,
 ): Promise<ReturnType<typeof getGoogleOAuthClient> | null> {
-  const account = await getClinicGoogleAccount(clinicId);
+  const account = await getSchoolGoogleAccount(schoolId);
   if (!account || account.sync_status !== "connected") return null;
 
   const client = getGoogleOAuthClient();
@@ -30,7 +30,7 @@ export async function getValidGoogleClient(
   // googleapis fires this whenever it silently refreshes during a call below —
   // persist the rotated token so we don't re-refresh unnecessarily next time.
   client.on("tokens", (tokens) => {
-    void persistRefreshedTokens(clinicId, tokens);
+    void persistRefreshedTokens(schoolId, tokens);
   });
 
   try {
@@ -39,7 +39,7 @@ export async function getValidGoogleClient(
     await client.getAccessToken();
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error refreshing Google token";
-    await markClinicGoogleAccountError(clinicId, message);
+    await markSchoolGoogleAccountError(schoolId, message);
     return null;
   }
 
@@ -52,11 +52,11 @@ interface RefreshedTokens {
   expiry_date?: number | null;
 }
 
-async function persistRefreshedTokens(clinicId: string, tokens: RefreshedTokens): Promise<void> {
+async function persistRefreshedTokens(schoolId: string, tokens: RefreshedTokens): Promise<void> {
   if (!tokens.access_token || !tokens.expiry_date) return;
   try {
-    await updateClinicGoogleAccountTokens({
-      clinicId,
+    await updateSchoolGoogleAccountTokens({
+      schoolId,
       encryptedAccessToken: encryptToken(tokens.access_token),
       encryptedRefreshToken: tokens.refresh_token
         ? encryptToken(tokens.refresh_token)

@@ -8,11 +8,11 @@ import type {
 } from "@/lib/scheduling/types";
 
 export class GoogleCalendarProvider implements SchedulingProvider {
-  constructor(private readonly clinicId: string) {}
+  constructor(private readonly schoolId: string) {}
 
   async listAvailableSlots(params?: { daysAhead?: number; requestHint?: string }): Promise<SchedulingSlot[]> {
     const slots = await listAvailableSlots({
-      clinicId: this.clinicId,
+      schoolId: this.schoolId,
       daysAhead: params?.daysAhead,
       requestHint: params?.requestHint,
     });
@@ -20,6 +20,6 @@ export class GoogleCalendarProvider implements SchedulingProvider {
   }
 
   async bookSlot(params: BookSlotParams): Promise<BookSlotResult> {
-    return bookSlot(this.clinicId, params);
+    return bookSlot(this.schoolId, params);
   }
 }

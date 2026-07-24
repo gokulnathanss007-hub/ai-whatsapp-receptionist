@@ -1,6 +1,6 @@
 # API_REFERENCE.md — HTTP API Reference
 
-> Owns every HTTP route this deployment exposes. Principles: `/CLAUDE.md` §10.
+> Owns every HTTP route this deployment exposes. Principles: `/CLAUDE.md` §7.
 > Architecture context: `../03-engineering/PROJECT_ARCHITECTURE.md`. Auth caveats:
 > `../03-engineering/SECURITY.md` §4.
 
@@ -18,7 +18,7 @@ Returns `hub.challenge` (200) when `hub.verify_token === META_VERIFY_TOKEN`; 403
 ### `POST /api/webhooks/whatsapp`
 Receives messages and status updates from Meta Cloud API.
 
-Responsibilities, in order (the fast-ack contract — CLAUDE.md §10):
+Responsibilities, in order (the fast-ack contract):
 1. Verify `X-Hub-Signature-256` (HMAC over raw body with `META_APP_SECRET`); 401 on failure.
 2. Extract message(s); dedupe on `message.id` (`processed_events` / unique
    `messages.wa_message_id`).
@@ -31,28 +31,34 @@ Inbound payload types handled: `text`; V2 adds `interactive.button_reply` and
 
 ## 2. Google OAuth (admin stopgap — not user-facing)
 
-### `GET /api/auth/google/connect?clinic_id=<uuid>&admin_token=<ADMIN_SETUP_TOKEN>`
+### `GET /api/auth/google/connect?school_id=<uuid>&admin_token=<ADMIN_SETUP_TOKEN>`
 403 unless `admin_token` matches env. Redirects to Google consent
 (`scope=https://www.googleapis.com/auth/calendar`, `access_type=offline`,
-`prompt=consent`, `state=` HMAC-signed clinic_id).
+`prompt=consent`, `state=` HMAC-signed `school_id`).
 
 ### `GET /api/auth/google/callback`
 Verifies `state` HMAC → exchanges `code` for tokens → encrypts (AES-256-GCM) → upserts
-`clinic_google_accounts` → plain success/failure acknowledgement.
+`school_google_accounts` → plain success/failure acknowledgement.
 
-> ⚠️ Both routes are an **explicit MVP stopgap** gated by one shared token. Retired when
-> V4 dashboard auth ships. Redirect URI: `https://app.medixum.ai/api/auth/google/callback`.
+### `GET /api/auth/google/status?school_id=<uuid>`
+Returns the connection status (`sync_status`) for the school's connected Google account,
+if any — used to verify a connect flow completed.
+
+> ⚠️ All three routes are an **explicit MVP stopgap** gated by one shared token (except
+> `status`, which is read-only). Retired when V4 dashboard auth ships. Redirect URI:
+> `https://app.schoolparentenquiry.ai/api/auth/google/callback`.
 
 ## 3. Scheduling (internal/testing)
 
-### `GET /api/scheduling/slots`
-Returns computed availability for a clinic (working hours ∩ Calendar free/busy ∩ existing
+### `GET /api/scheduling/slots?school_id=<uuid>`
+Returns computed availability for a school (working hours ∩ Calendar free/busy ∩ existing
 appointments). Used for verification/testing; the reply pipeline calls the provider
 directly, not this route.
 
 ### `POST /api/scheduling/book`
-Books a slot via `bookSlot()` (Postgres-mutex insert → Calendar event). Same code path
-the pipeline uses; exists for testing/manual ops.
+Body: `{ school_id, slot_id, name, mobile, reason }`. Books a slot via `bookSlot()`
+(Postgres-mutex insert → Calendar event). Same code path the pipeline uses; exists for
+testing/manual ops.
 
 ## 4. Conventions (binding for all future routes)
 

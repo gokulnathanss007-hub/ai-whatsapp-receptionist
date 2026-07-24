@@ -22,14 +22,14 @@ async function main() {
   });
   await client.connect();
 
-  const clinic = await client.query(
-    `select id, name, auto_confirm_enabled, timezone, opening_hours != '{}'::jsonb as has_hours from clinics`,
+  const school = await client.query(
+    `select id, name, auto_confirm_enabled, timezone, opening_hours != '{}'::jsonb as has_hours from schools`,
   );
-  console.log("clinic:", JSON.stringify(clinic.rows));
+  console.log("school:", JSON.stringify(school.rows));
 
   const convos = await client.query(`
     select c.id, p.wa_phone, c.stage, c.booking_status, c.human_handoff, c.last_message_at
-    from conversations c join patients p on p.id = c.patient_id
+    from conversations c join parents p on p.id = c.parent_id
     order by c.last_message_at desc limit 5`);
   console.log("recent conversations:", JSON.stringify(convos.rows, null, 2));
 

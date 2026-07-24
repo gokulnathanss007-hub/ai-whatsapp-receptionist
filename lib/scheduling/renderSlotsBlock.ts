@@ -18,13 +18,13 @@ export function renderAvailableSlotsBlock(slots: SchedulingSlot[]): string {
  * (or the picked slot id was stale) — built directly from freshly re-fetched
  * alternatives, no second LLM call. See /docs/GOOGLE_CALENDAR_INTEGRATION.md §6.
  */
-// Wording note for every reply below: patient-facing text must use easy,
-// everyday words — many patients are not fluent in English. Short sentences,
+// Wording note for every reply below: parent-facing text must use easy,
+// everyday words — many parents are not fluent in English. Short sentences,
 // no words like "unavailable"/"alternatives"/"confirm shortly". Mirrors the
 // TONE rules in /prompts/system_prompt.md.
 export function renderSlotConflictReply(alternatives: SchedulingSlot[]): string {
   if (alternatives.length === 0) {
-    return "Sorry, that time was just taken, and no other times are open right now. Our staff will message you soon with new times.";
+    return "Sorry, that time was just taken.\n\nNo other times are open right now.\n\nOur staff will message you soon with new times.";
   }
   const lines = alternatives.map((slot) => `• ${slot.label}`).join("\n");
   return `Sorry, that time was just taken.\n\nHere are the closest open times:\n\n${lines}\n\nWhich time works for you?`;
@@ -32,14 +32,14 @@ export function renderSlotConflictReply(alternatives: SchedulingSlot[]): string 
 
 /**
  * For slot_unavailable (stale/unverifiable selection) — NOT for a lost
- * booking race. Production incident: a patient was told "that time was just
+ * booking race. Production incident: a parent was told "that time was just
  * taken" when nothing was ever taken (the model had garbled the slot id) —
  * and the "alternatives" even listed the same time as still open. Never
  * claim someone took the slot unless a real insert conflict said so.
  */
 export function renderSlotNotOpenReply(alternatives: SchedulingSlot[]): string {
   if (alternatives.length === 0) {
-    return "Sorry, I could not get that time, and no other times are open right now. Our staff will message you soon with new times.";
+    return "Sorry, I could not get that time.\n\nNo other times are open right now.\n\nOur staff will message you soon with new times.";
   }
   const lines = alternatives.map((slot) => `• ${slot.label}`).join("\n");
   return `Sorry, I could not get that time.\n\nHere are the current open times:\n\n${lines}\n\nWhich time works for you?`;
@@ -50,25 +50,23 @@ export function renderSlotNotOpenReply(alternatives: SchedulingSlot[]): string {
  * from the actually-booked slot, never from the model's own free-text claim.
  * A model that resolves the wrong id from <available_slots> (e.g. losing
  * track of which day a time referred to) would otherwise state a confident
- * but wrong date/time; this guarantees the patient always sees the real
+ * but wrong date/time; this guarantees the parent always sees the real
  * booked slot, so any mismatch is immediately visible in-conversation rather
  * than silently wrong. See /docs/GOOGLE_CALENDAR_INTEGRATION.md §6.
  */
 export function renderBookingConfirmation(params: {
   slot: SchedulingSlot;
-  clinicName: string;
-  doctorName?: string;
+  schoolName: string;
 }): string {
   const [datePart, timePart] = params.slot.label.split(" – ");
-  const doctorLine = params.doctorName ? `\n👩‍⚕️ Doctor: ${params.doctorName}` : "";
-  return `✅ Your appointment is booked.\n\n📅 Date: ${datePart}\n🕒 Time: ${timePart}${doctorLine}\n\nSee you at ${params.clinicName}. Thank you!`;
+  return `✅ Your visit is booked.\n\n📅 Date: ${datePart}\n🕒 Time: ${timePart}\n\nSee you at ${params.schoolName}. Thank you!`;
 }
 
 /**
  * Deterministic rendering of "here are the available times" — used whenever
  * output.presenting_slots is true, REPLACING whatever list the model wrote
  * itself. In production the model fabricated an entire fake slot list
- * (including a past time and a day the clinic was closed) rather than
+ * (including a past time and a day the school was closed) rather than
  * faithfully relaying <available_slots> — the model's own free-text slot
  * list can never be trusted, only the real data can. See
  * /docs/GOOGLE_CALENDAR_INTEGRATION.md §6.
@@ -80,28 +78,27 @@ export function renderBookingConfirmation(params: {
  * days (e.g. Sundays) can never appear.
  */
 export function renderDayPickerText(days: Array<{ title: string; freeCount: number }>): string {
-  // Just the day names — free-slot counts confused patients (2026-07-18).
+  // Just the day names — free-slot counts confused parents (2026-07-18).
   const lines = days.map((day) => `• ${day.title}`);
   return `Which day works for you?\n\n${lines.join("\n")}\n\nJust reply with the day.`;
 }
 
-export function renderSlotsPresentation(slots: SchedulingSlot[], doctorName?: string): string {
+export function renderSlotsPresentation(slots: SchedulingSlot[]): string {
   if (slots.length === 0) {
     return "Sorry, no times are open right now. Our staff will message you soon with new times.";
   }
   const lines = slots.map((slot) => `• ${slot.label}`).join("\n");
-  const doctorPart = doctorName ? ` with ${doctorName}` : "";
-  return `Here are the open times${doctorPart}:\n\n${lines}\n\nWhich time works for you?`;
+  return `Here are the open times:\n\n${lines}\n\nWhich time works for you?`;
 }
 
 /**
- * Deterministic reply for when the patient asked for a specific date/time
+ * Deterministic reply for when the parent asked for a specific date/time
  * that turned out NOT to be free — e.g. "tomorrow 5pm" but that exact slot
  * is booked. Distinct from renderSlotConflictReply (which fires after an
  * actual booking attempt loses a race): this fires before any booking is
  * ever attempted, whenever the requested exact slot simply isn't available.
  * Never silently substitutes a different slot — always says so explicitly
- * and asks the patient to choose. See
+ * and asks the parent to choose. See
  * /docs/GOOGLE_CALENDAR_INTEGRATION.md §6/§7.
  */
 export function renderRequestedSlotUnavailable(
@@ -109,7 +106,7 @@ export function renderRequestedSlotUnavailable(
   alternatives: SchedulingSlot[],
 ): string {
   if (alternatives.length === 0) {
-    return `Sorry, ${requestedLabel} is not free, and no other times are open right now. Our staff will message you soon with new times.`;
+    return `Sorry, ${requestedLabel} is not free.\n\nNo other times are open right now.\n\nOur staff will message you soon with new times.`;
   }
   const lines = alternatives.map((slot) => `• ${slot.label}`).join("\n");
   return `Sorry, ${requestedLabel} is not free.\n\nHere are the closest open times:\n\n${lines}\n\nWhich time works for you?`;

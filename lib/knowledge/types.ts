@@ -1,12 +1,12 @@
 import { z } from "zod";
 
 // Validates a single row before it's allowed into the rendered knowledge
-// block — the block is trusted input to the model, so malformed clinic data
+// block — the block is trusted input to the model, so malformed school data
 // must fail loudly here rather than reach the prompt.
 
 const weekdayHoursSchema = z.array(z.tuple([z.string(), z.string()]));
 
-/** Mirrors lib/supabase/types.ts WorkingHours — the clinic's single source of truth for hours. */
+/** Mirrors lib/supabase/types.ts WorkingHours — the school's single source of truth for hours. */
 export const openingHoursSchema = z.object({
   mon: weekdayHoursSchema.optional(),
   tue: weekdayHoursSchema.optional(),
@@ -17,7 +17,7 @@ export const openingHoursSchema = z.object({
   sun: weekdayHoursSchema.optional(),
 });
 
-export const clinicProfileSchema = z.object({
+export const schoolProfileSchema = z.object({
   id: z.string(),
   name: z.string().min(1),
   city: z.string().nullable(),
@@ -26,7 +26,6 @@ export const clinicProfileSchema = z.object({
   timings: z.string().nullable(),
   parking_info: z.string().nullable(),
   languages: z.array(z.string()),
-  consultation_fee: z.number().nullable(),
   payment_methods: z.array(z.string()),
   follow_up_policy: z.string().nullable(),
   cancellation_policy: z.string().nullable(),
@@ -39,33 +38,33 @@ export const clinicProfileSchema = z.object({
   timezone: z.string(),
   knowledge_version: z.number().int(),
 });
-export type ClinicProfile = z.infer<typeof clinicProfileSchema>;
+export type SchoolProfile = z.infer<typeof schoolProfileSchema>;
 
-export const clinicDoctorSchema = z.object({
+export const schoolStaffSchema = z.object({
   name: z.string().min(1),
   role: z.string().nullable(),
 });
-export type ClinicDoctor = z.infer<typeof clinicDoctorSchema>;
+export type SchoolStaff = z.infer<typeof schoolStaffSchema>;
 
-export const clinicServiceSchema = z.object({
+export const schoolServiceSchema = z.object({
   service_key: z.string().min(1),
   display_name: z.string().min(1),
   high_level_info: z.string().nullable(),
 });
-export type ClinicService = z.infer<typeof clinicServiceSchema>;
+export type SchoolService = z.infer<typeof schoolServiceSchema>;
 
-export const clinicFaqEntrySchema = z.object({
+export const schoolFaqEntrySchema = z.object({
   faq_id: z.string().min(1),
   category: z.string(),
   question: z.string(),
   answer: z.string().min(1),
   requires_staff: z.boolean(),
 });
-export type ClinicFaqEntry = z.infer<typeof clinicFaqEntrySchema>;
+export type SchoolFaqEntry = z.infer<typeof schoolFaqEntrySchema>;
 
-export interface ClinicKnowledge {
-  profile: ClinicProfile;
-  doctors: ClinicDoctor[];
-  services: ClinicService[];
-  faqs: ClinicFaqEntry[];
+export interface SchoolKnowledge {
+  profile: SchoolProfile;
+  staff: SchoolStaff[];
+  services: SchoolService[];
+  faqs: SchoolFaqEntry[];
 }

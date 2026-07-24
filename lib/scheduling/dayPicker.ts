@@ -1,9 +1,9 @@
 import { DateTime } from "luxon";
-import { getClinic } from "@/lib/supabase/queries";
+import { getSchool } from "@/lib/supabase/queries";
 import { listAvailableSlots } from "@/lib/scheduling/listAvailableSlots";
 import type { SchedulingSlot } from "@/lib/scheduling/types";
 
-// Day-first booking (PATIENT_EXPERIENCE.md §5): patients pick a DAY, then a
+// Day-first booking (PATIENT_EXPERIENCE.md §5): parents pick a DAY, then a
 // time. Day options are derived from real availability — a closed day
 // (e.g. Sunday) has no free slots, so it can never appear; no separate
 // "which days are we open" bookkeeping to drift out of sync.
@@ -12,9 +12,9 @@ const DAY_PICKER_WINDOW_DAYS = 7;
 const DAY_ROW_ID_PATTERN = /^day_(\d{4}-\d{2}-\d{2})$/;
 
 export interface DayOption {
-  /** Clinic-local ISO date, e.g. "2026-07-19". */
+  /** School-local ISO date, e.g. "2026-07-19". */
   dayKey: string;
-  /** Patient-facing label: "Today", "Tomorrow", "Sat, Jul 19". */
+  /** Parent-facing label: "Today", "Tomorrow", "Sat, Jul 19". */
   title: string;
   /** How many free times that day (shown as the list row description). */
   freeCount: number;
@@ -24,7 +24,7 @@ export function dayRowId(dayKey: string): string {
   return `day_${dayKey}`;
 }
 
-/** Returns the clinic-local ISO date a day row id refers to, or null if the id isn't a day row. */
+/** Returns the school-local ISO date a day row id refers to, or null if the id isn't a day row. */
 export function parseDayRowId(id: string): string | null {
   const match = DAY_ROW_ID_PATTERN.exec(id);
   return match ? match[1]! : null;
@@ -44,7 +44,7 @@ const WEEKDAY_TO_LUXON: Record<string, number> = {
 
 /**
  * Resolves a typed day-only reply to the day picker ("Saturday", "today",
- * "Tomorrow") into a clinic-local ISO date — every tap has a typed
+ * "Tomorrow") into a school-local ISO date — every tap has a typed
  * equivalent (PATIENT_EXPERIENCE.md §6.2). Returns null when no day is
  * mentioned; time-of-day is NOT required (that's resolveRequestedDateTime's
  * job for full day+time messages).
@@ -103,14 +103,14 @@ export function groupSlotsIntoDayOptions(params: {
  * day-picker list. Null mirrors listAvailableSlots' "no working calendar"
  * contract.
  */
-export async function listOpenDays(clinicId: string): Promise<DayOption[] | null> {
-  const clinic = await getClinic(clinicId);
-  if (!clinic) return null;
+export async function listOpenDays(schoolId: string): Promise<DayOption[] | null> {
+  const school = await getSchool(schoolId);
+  if (!school) return null;
   const slots = await listAvailableSlots({
-    clinicId,
+    schoolId,
     daysAhead: DAY_PICKER_WINDOW_DAYS,
     limit: 1000,
   });
   if (slots === null) return null;
-  return groupSlotsIntoDayOptions({ slots, timezone: clinic.timezone, now: new Date() });
+  return groupSlotsIntoDayOptions({ slots, timezone: school.timezone, now: new Date() });
 }

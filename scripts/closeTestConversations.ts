@@ -1,5 +1,5 @@
-/* One-off: close all open conversations for the pilot clinic so testing
- * starts from a clean greeting → Main Menu state. Patient records persist;
+/* One-off: close all open conversations for the pilot school so testing
+ * starts from a clean greeting → Main Menu state. Parent records persist;
  * only conversation state (stage/collected scheduling prefs) is retired.
  * Run: npx tsx scripts/closeTestConversations.ts
  */

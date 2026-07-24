@@ -1,7 +1,7 @@
 import { isAdminRequestAuthorized } from "@/lib/google/adminAuth";
-import { getClinicGoogleAccount } from "@/lib/supabase/queries";
+import { getSchoolGoogleAccount } from "@/lib/supabase/queries";
 
-// Lets an operator verify a clinic's Google Calendar connection without ever
+// Lets an operator verify a school's Google Calendar connection without ever
 // exposing the stored (encrypted) tokens. Same admin-token gate as /connect.
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);
@@ -10,12 +10,12 @@ export async function GET(request: Request): Promise<Response> {
     return new Response("Forbidden", { status: 403 });
   }
 
-  const clinicId = url.searchParams.get("clinic_id");
-  if (!clinicId) {
-    return new Response("Missing clinic_id", { status: 400 });
+  const schoolId = url.searchParams.get("school_id");
+  if (!schoolId) {
+    return new Response("Missing school_id", { status: 400 });
   }
 
-  const account = await getClinicGoogleAccount(clinicId);
+  const account = await getSchoolGoogleAccount(schoolId);
   if (!account) {
     return Response.json({ connected: false });
   }

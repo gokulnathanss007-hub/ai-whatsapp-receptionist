@@ -2,7 +2,74 @@
 
 > Records changes to: documentation architecture, prompts, AI output contract, schema,
 > and KPI definitions. Code history lives in git; this file tracks the things whose
-> silent drift hurts (`/CLAUDE.md` §18).
+> silent drift hurts.
+
+---
+
+## 2026-07-23 — Docs converted from clinic domain to school domain
+
+**Context:** The application layer (`lib/supabase`, `lib/types.ts`, `lib/knowledge`,
+`lib/decision-engine`, the live prompt, and migration `0012_rename_clinic_to_school.sql`)
+had already been converted from the dermatology/cosmetology clinic MVP ("Medixum AI") to
+the K-12 school parent-enquiry product ("School Parent Enquiry AI") in a prior session.
+This entry records bringing the `docs/` tree into agreement with that conversion — the
+docs had been left describing the old clinic business and were stale/wrong against the
+actual code contract.
+
+**Changed (terminology, throughout `docs/`)**
+- Clinic → School; Patient → Parent; Doctor → School Staff; Appointment/consultation →
+  Admission enquiry / school visit (the `appointments` table itself keeps its name);
+  Treatment → Program/grade; Consultation fee → Fee structure (schools have tiered,
+  grade-dependent fees — `schools` has no fee column; fee info is a `school_faqs` row);
+  "Medixum AI" → "School Parent Enquiry AI"; example tenant "Glow Skin Clinic" / "Dr.
+  Meera" → "Sunrise Public School" / "Mrs. Kavitha Raman (Principal)" / "Mr. Arun Kumar
+  (Admissions Officer)" (`supabase/seed/sunrise_public_school.sql`).
+- Medical-safety language (diagnosis/prescription) → school-safeguarding language: never
+  promise admission/a seat/a fee waiver; never give legal or safeguarding advice; hand
+  off on sensitive matters (custody, bullying, abuse, legal) or an urgent safety concern.
+
+**Contract/schema documentation brought into agreement with `lib/types.ts` (code
+unchanged — docs were out of date, not the code)**
+- `../02-product/INTENTS.md` and `../02-product/CONVERSATION_FLOWS.md` rewritten to the
+  actual intent set (`book_visit`, `reschedule`, `cancel`, `admission_enquiry`,
+  `fee_structure`, `school_timings`, `transport`, `holidays_events`, `facilities`,
+  `certificates`, `location`, `parking`, `staff`, `payment_methods`,
+  `follow_up_policy`, `curriculum`, `extracurriculars`, `general_enquiry`, `greeting`,
+  `talk_to_human`, `complaint`, `billing_issue`, `refund`, `urgent_safety_concern`,
+  `sensitive_matter`, `unknown`, `out_of_scope`), handoff reasons (`sensitive_matter`,
+  `complaint`, `billing_issue`, `refund`, `urgent_safety_concern`, `legal`, `unknown`,
+  `explicit_request`), and the AI output field `enquiry_request` (not
+  `appointment_request`).
+- `../03-engineering/PATIENT_EXPERIENCE.md` §3 Main Menu spec updated to the real
+  10-item menu (`lib/decision-engine/mainMenu.ts`); screen registry updated to the real
+  `Screen` union (`school_service_info`, `school_location` replace `treatment_info`,
+  `clinic_location`; no per-doctor-selection screen — a school visit slot is never tied
+  to a specific staff member).
+- `../03-engineering/KNOWLEDGE_STRUCTURE.md` rewritten around the actual `schools` /
+  `school_staff` / `school_services` / `school_faqs` schema and the real
+  `renderSchoolKnowledgeBlock()` output format.
+- `../03-engineering/GOOGLE_CALENDAR_INTEGRATION.md` — prose and embedded SQL/code
+  snippets updated to current table/column names (`school_google_accounts`, `parents`,
+  `admission_enquiries`, `school_id`, `parent_id`, `grade_applying_for`) while preserving
+  every historical implementation note and recorded bug verbatim in substance.
+- `../04-api/API_REFERENCE.md`, `../05-database/DATABASE_SCHEMA.md` — updated to the
+  actual `?school_id=` query params and post-`0012` table names.
+- `../08-deployment/DEPLOYMENT.md` — "Onboarding a clinic" runbook → "Onboarding a
+  school."
+
+**Explicitly preserved (unchanged)**
+- All safety rules, prohibitions, and fail-closed behaviour.
+- Stack decisions (Next.js/Vercel, Meta direct, GPT-5 nano, Supabase, Trigger.dev v4).
+- Prompt caching architecture, idempotency patterns, Postgres-as-mutex booking design,
+  two-table requests/appointments split, `opening_hours` single-source-of-truth,
+  all GOOGLE_CALENDAR_INTEGRATION implementation notes and recorded bugs.
+- Historical changelog entries below (clinic-era) — kept as history, not rewritten.
+- `supabase/seed/glow_skin_madurai*.sql` — left in place as historical clinic-era
+  reference data, not part of the docs tree.
+- **No application code changed in this pass** — `lib/`, `app/`, `trigger/`, `tests/`,
+  `scripts/`, `supabase/`, and `prompts/` were already converted and working; only
+  `docs/` was touched (excluding root `CLAUDE.md`, root `README.md`, and
+  `docs/FAQ_SCHEMA.json`, which were already converted in an earlier pass).
 
 ---
 

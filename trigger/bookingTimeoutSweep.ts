@@ -7,10 +7,10 @@ import { markStaleBookingsTimedOut } from "@/lib/supabase/queries";
  * terminal state (confirmed / failed / timeout), covering the one gap the
  * reactive check in trigger/replyPipeline.ts can't: that check only fires
  * when a NEW inbound message arrives for a conversation stuck at
- * booking_in_progress. If a run crashes mid-booking and the patient never
+ * booking_in_progress. If a run crashes mid-booking and the parent never
  * writes back, nothing would otherwise ever move that conversation out of
  * booking_in_progress — it would sit there permanently. This sweep runs
- * independently of any patient activity and guarantees a terminal state is
+ * independently of any parent activity and guarantees a terminal state is
  * always eventually reached.
  */
 export const bookingTimeoutSweepTask = schedules.task({

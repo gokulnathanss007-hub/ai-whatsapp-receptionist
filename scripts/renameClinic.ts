@@ -1,16 +1,17 @@
-/* One-off: rebrand the pilot clinic for demos — "Medixum Clinic" (agency
- * name, presentable to any prospect) with the new address. Data-only; the
- * receptionist reads clinic identity from the DB every turn, so no deploy
- * is needed. Run: npx tsx scripts/renameClinic.ts
+/* One-off: rebrand the pilot school for demos with a presentable name and
+ * address. Data-only; the receptionist reads school identity from the DB
+ * every turn, so no deploy is needed. Run: npx tsx scripts/renameClinic.ts
+ * NOTE: SCHOOL_ID below is a stale clinic-era pilot value — point it at a
+ * real schools.id before running.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { Client } from "pg";
 
-const CLINIC_ID = "ff605796-fc70-42cb-b10d-ef67c5b5d092";
-const NEW_NAME = "Medixum Clinic";
+const SCHOOL_ID = "ff605796-fc70-42cb-b10d-ef67c5b5d092";
+const NEW_NAME = "Sunrise Public School";
 const NEW_ADDRESS = "No. 1/211, Sourasra Colony Minibus Stand, Meenakshi Nagar, Sakkimangalam, Madurai - 625 201";
-// The clinic's real Google Maps pin (owner-provided short link).
+// The school's real Google Maps pin (owner-provided short link).
 const NEW_MAPS_URL = "https://maps.app.goo.gl/RUWQQbPhXMLhmU8J8";
 
 async function main() {
@@ -28,27 +29,27 @@ async function main() {
   await c.connect();
 
   await c.query(
-    `update clinics
+    `update schools
      set name = $1, address = $2, maps_url = $3, knowledge_version = knowledge_version + 1
      where id = $4`,
-    [NEW_NAME, NEW_ADDRESS, NEW_MAPS_URL, CLINIC_ID],
+    [NEW_NAME, NEW_ADDRESS, NEW_MAPS_URL, SCHOOL_ID],
   );
 
   await c.query(
-    `update clinic_faqs
+    `update school_faqs
      set answer = $1
-     where clinic_id = $2 and faq_id = 'location'`,
-    [`We are at ${NEW_ADDRESS}.`, CLINIC_ID],
+     where school_id = $2 and faq_id = 'location'`,
+    [`We are at ${NEW_ADDRESS}.`, SCHOOL_ID],
   );
 
   const check = await c.query(
-    `select name, address, maps_url, city from clinics where id = $1`,
-    [CLINIC_ID],
+    `select name, address, maps_url, city from schools where id = $1`,
+    [SCHOOL_ID],
   );
-  console.log("clinic now:", JSON.stringify(check.rows[0], null, 2));
+  console.log("school now:", JSON.stringify(check.rows[0], null, 2));
   const faq = await c.query(
-    `select answer from clinic_faqs where clinic_id = $1 and faq_id = 'location'`,
-    [CLINIC_ID],
+    `select answer from school_faqs where school_id = $1 and faq_id = 'location'`,
+    [SCHOOL_ID],
   );
   console.log("location FAQ:", faq.rows[0]?.answer);
   await c.end();

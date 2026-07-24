@@ -22,9 +22,9 @@ function rangesKey(ranges: Array<[string, string]>): string {
 }
 
 /**
- * Renders clinics.opening_hours as clinic-facing text, e.g.
- * "Mon–Sat: 10:00 AM–8:00 PM. Sun: Closed." This is what the receptionist
- * tells patients, generated from the exact same structured value the
+ * Renders schools.opening_hours as parent-facing text, e.g.
+ * "Mon–Sat: 10:00 AM–8:00 PM. Sun: Closed." This is what the school office
+ * tells parents, generated from the exact same structured value the
  * scheduler uses to generate bookable slots — see
  * /docs/GOOGLE_CALENDAR_INTEGRATION.md §3. Returns null when no hours are
  * configured yet, so callers can fall back to a manually-written string.

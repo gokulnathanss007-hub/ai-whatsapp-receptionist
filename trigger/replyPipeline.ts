@@ -7,7 +7,7 @@ import { applySafetyOverride, detectSafetyOverride } from "@/lib/ai/safetyOverri
 import { nextConversationStage } from "@/lib/ai/conversationStage";
 import { mergeCollectedSlots } from "@/lib/ai/mergeSlots";
 import { BOOKING_IN_PROGRESS_TIMEOUT_MS, transitionBookingStatus } from "@/lib/ai/bookingStatus";
-import { loadClinicKnowledge, renderClinicKnowledgeBlock } from "@/lib/knowledge/loader";
+import { loadSchoolKnowledge, renderSchoolKnowledgeBlock } from "@/lib/knowledge/loader";
 import { getSchedulingProvider } from "@/lib/scheduling";
 import {
   renderAvailableSlotsBlock,
@@ -27,14 +27,16 @@ import { extractTimeMentions, slotMatchesTimeMention } from "@/lib/scheduling/ti
 import {
   beginBookingAttempt,
   getOrCreateOpenConversation,
-  getOrCreatePatient,
+  getOrCreateParent,
   getRecentMessages,
-  insertAppointmentRequest,
+  getSchoolAsset,
+  insertAdmissionEnquiry,
+  insertAdmissionOfficeEnquiry,
   insertMessage,
   isEventProcessed,
   markBookingTimeout,
   markEventProcessed,
-  resolveClinicIdByPhoneNumberId,
+  resolveSchoolIdByPhoneNumberId,
   updateConversationAfterTurn,
 } from "@/lib/supabase/queries";
 import { sendWhatsAppTextMessage } from "@/lib/whatsapp/sendMessage";
@@ -43,14 +45,28 @@ import { translateTurnToActions } from "@/lib/decision-engine/translateV1";
 import {
   isGreetingOnly,
   isMenuRequest,
-  MAIN_MENU_ITEMS,
-  renderDoctorList,
   renderHandoffText,
   renderMainMenu,
   renderMainMenuText,
-  renderTreatmentsList,
   resolveMenuSelection,
 } from "@/lib/decision-engine/mainMenu";
+import {
+  ADM_COLLECT_CLASS_PREFIX,
+  ADMISSION_ENQUIRY_CONFIRMATION_TEXT,
+  ASK_MESSAGE_TEXT,
+  ASK_STUDENT_NAME_TEXT,
+  isSkipMessage,
+  renderAdmissionMenu,
+  renderAdmissionMenuText,
+  renderAdmissionProcessText,
+  renderAdmissionStatusText,
+  renderAskClass,
+  renderAskClassText,
+  renderAskParentNameText,
+  renderRequiredDocumentsText,
+  resolveAdmissionMenuSelection,
+  resolveAskClassSelection,
+} from "@/lib/decision-engine/admissionMenu";
 import type { Action } from "@/lib/decision-engine/types";
 import { formatOpeningHours } from "@/lib/scheduling/formatOpeningHours";
 import type { AiOutput, BookingStatus, CollectedSlots, ConversationStage, HandoffReason } from "@/lib/types";
@@ -61,16 +77,16 @@ export interface ReplyPipelinePayload {
   fromWaId: string;
   contactName: string | null;
   body: string;
-  /** interactive.button_reply/list_reply id when the patient tapped instead of typing (V2 interactive) — e.g. the exact slot id of a tapped row. */
+  /** interactive.button_reply/list_reply id when the parent tapped instead of typing (V2 interactive) — e.g. the exact slot id of a tapped row. */
   interactiveReplyId?: string | null;
 }
 
 const HISTORY_LIMIT = 12;
 
 // Resume threshold (PATIENT_EXPERIENCE.md §7): after this much silence a
-// returning patient gets a clean scheduling slate (stale relative dates and
-// long-dead slot offers are dropped; name/concern are kept). Matches the
-// Meta 24h session window — beyond it the prior session is over anyway.
+// returning parent gets a clean scheduling slate (stale relative dates and
+// long-dead slot offers are dropped; name/enquiry details are kept). Matches
+// the Meta 24h session window — beyond it the prior session is over anyway.
 const STALE_CONVERSATION_MS = 24 * 60 * 60 * 1000;
 
 // Deliberately broad: catches any phrasing that claims a booking is already
@@ -82,14 +98,29 @@ const STALE_CONVERSATION_MS = 24 * 60 * 60 * 1000;
 const CLAIMS_COMPLETION_PATTERN =
   /✅|\ball set\b|\b(?:is|has been|you'?re)\s+(?:booked|confirmed|scheduled|set)\b/i;
 
+// FAQ-category menu items that answer directly from school_faqs — no AI call
+// needed. Mirrors the 1:1 menu↔category mapping enforced by
+// school_faqs_category_check (0012_rename_clinic_to_school.sql).
+// menu_transport and menu_fee_structure are handled separately (see
+// TRANSPORT_PDF_ASSET_KEY / FEE_STRUCTURE_ASSET_KEY below) — they may
+// send a file (PDF/image) instead of plain FAQ text.
+const FAQ_MENU_ITEMS: Record<string, { category: string; intent: string }> = {
+  menu_facilities: { category: "facilities", intent: "facilities" },
+};
+
+/** school_assets.asset_key for the Transport menu's routes/schedule PDF (product decision 2026-07-23). */
+const TRANSPORT_PDF_ASSET_KEY = "transport_bus_routes";
+/** school_assets.asset_key for the Fee Structure menu's fee details image (product decision 2026-07-23). */
+const FEE_STRUCTURE_ASSET_KEY = "fee_structure_details";
+
 // Fail-closed fallback per /docs/AI_RECEPTIONIST_SPEC.md §12: any generation
 // or parse error becomes a handoff, never an unreviewed guess.
 function fallbackHandoffOutput(): AiOutput {
   return {
-    reply: "I will pass this to our clinic staff. They will help you soon.",
+    reply: "I will pass this to our school office.\n\nThey will help you soon.",
     intent: "unknown",
     collected: {},
-    appointment_request: null,
+    enquiry_request: null,
     booking_selection: null,
     presenting_slots: false,
     human_handoff: true,
@@ -124,7 +155,7 @@ async function shortCircuitReply(params: {
   conversationId: string;
   payload: ReplyPipelinePayload;
   reply: string;
-}): Promise<{ skipped: false; intent: "book_appointment"; humanHandoff: false }> {
+}): Promise<{ skipped: false; intent: "book_visit"; humanHandoff: false }> {
   await insertInboundMessage(params.conversationId, params.payload);
   const outboundMessageId = await sendWhatsAppTextMessage({
     phoneNumberId: params.payload.phoneNumberId,
@@ -136,10 +167,10 @@ async function shortCircuitReply(params: {
     waMessageId: outboundMessageId,
     direction: "outbound",
     body: params.reply,
-    intent: "book_appointment",
+    intent: "book_visit",
   });
   await markEventProcessed(params.payload.waMessageId);
-  return { skipped: false as const, intent: "book_appointment" as const, humanHandoff: false as const };
+  return { skipped: false as const, intent: "book_visit" as const, humanHandoff: false as const };
 }
 
 export const replyPipelineTask = task({
@@ -158,20 +189,20 @@ export const replyPipelineTask = task({
       return { skipped: true as const };
     }
 
-    const clinicId = await resolveClinicIdByPhoneNumberId(payload.phoneNumberId);
-    if (!clinicId) {
-      throw new Error(`No clinic mapped to phone_number_id ${payload.phoneNumberId}`);
+    const schoolId = await resolveSchoolIdByPhoneNumberId(payload.phoneNumberId);
+    if (!schoolId) {
+      throw new Error(`No school mapped to phone_number_id ${payload.phoneNumberId}`);
     }
-    logger.info("Resolved clinic", { ms: elapsed() });
+    logger.info("Resolved school", { ms: elapsed() });
 
-    const patient = await getOrCreatePatient(clinicId, payload.fromWaId);
-    const conversation = await getOrCreateOpenConversation(clinicId, patient.id);
-    logger.info("Loaded patient + conversation", { ms: elapsed() });
+    const parent = await getOrCreateParent(schoolId, payload.fromWaId);
+    const conversation = await getOrCreateOpenConversation(schoolId, parent.id);
+    logger.info("Loaded parent + conversation", { ms: elapsed() });
 
     // Duplicate protection + crash recovery: a real booking attempt is
     // already in flight for this conversation (see beginBookingAttempt()
     // below). Root cause this replaces: the AI previously had no persisted
-    // backend state to consult, so a patient sending "any update?" while a
+    // backend state to consult, so a parent sending "any update?" while a
     // prior turn was still resolving could get a second, independently
     // generated status claim — the exact "booked... actually checking...
     // still checking" contradiction this whole state machine exists to rule
@@ -189,7 +220,7 @@ export const replyPipelineTask = task({
         return shortCircuitReply({
           conversationId: conversation.id,
           payload,
-          reply: "We are still booking your appointment. You don't need to do anything — we will message you as soon as it is done.",
+          reply: "We are still booking your visit.\n\nYou don't need to do anything — we will message you as soon as it is done.",
         });
       }
       if (!isRetryOfSameAttempt) {
@@ -202,7 +233,7 @@ export const replyPipelineTask = task({
           conversationId: conversation.id,
           payload,
           reply:
-            "Sorry, your booking is taking a little longer than usual. You don't need to do anything — we will message you as soon as it is confirmed.",
+            "Sorry, your booking is taking a little longer than usual.\n\nYou don't need to do anything — we will message you as soon as it is confirmed.",
         });
       }
       // isRetryOfSameAttempt: this IS the message that started the in-flight
@@ -211,15 +242,16 @@ export const replyPipelineTask = task({
       // genuinely re-attempt the booking below, regardless of age.
     }
 
-    // Conversation Resume Strategy (PATIENT_EXPERIENCE.md §7): a patient
+    // Conversation Resume Strategy (PATIENT_EXPERIENCE.md §7): a parent
     // returning after a long gap must get a fresh start, not the ghost of a
     // days-old session. Production incident: a conversation frozen at stage
     // "booking" with preferred "tomorrow" collected 13 days earlier (a) kept
     // suppressing the Main Menu forever ("never interrupt an active
     // booking" — but nothing was active) and (b) made the model hallucinate
     // "You're booked for tomorrow?" from rotten relative dates. Keep durable
-    // identity (name, concern); drop the scheduling state — relative dates
-    // like "tomorrow" are only meaningful within the session that said them.
+    // identity (name, enquiry details); drop the scheduling state — relative
+    // dates like "tomorrow" are only meaningful within the session that said
+    // them.
     const conversationIsStale =
       Date.now() - new Date(conversation.last_message_at).getTime() > STALE_CONVERSATION_MS;
     if (conversationIsStale && conversation.booking_status !== "booking_in_progress") {
@@ -242,14 +274,14 @@ export const replyPipelineTask = task({
 
     // Independent of each other — run concurrently.
     const [knowledge, history] = await Promise.all([
-      loadClinicKnowledge(clinicId),
+      loadSchoolKnowledge(schoolId),
       getRecentMessages(conversation.id, HISTORY_LIMIT),
       insertInboundMessage(conversation.id, payload),
     ]);
-    const knowledgeBlock = renderClinicKnowledgeBlock(knowledge);
+    const knowledgeBlock = renderSchoolKnowledgeBlock(knowledge);
     logger.info("Loaded knowledge + history, inserted inbound message", { ms: elapsed() });
 
-    // ── Patient Experience Layer: deterministic screens ──────────────────
+    // ── Parent Experience Layer: deterministic screens ────────────────────
     // The banking-app moments (menu, menu picks, slot-tap confirmation) are
     // rendered by CODE, not the model — instant, token-free, and immune to
     // model noise (PATIENT_EXPERIENCE.md §3/§4). The AI handles everything
@@ -297,31 +329,35 @@ export const replyPipelineTask = task({
     };
 
     const persisted = conversation.collected_slots as CollectedSlots | undefined;
-    const menuAllowedHere =
-      ["greeting", "faq", "followup"].includes(conversation.stage) &&
-      ["none", "confirmed", "failed", "timeout"].includes(conversation.booking_status) &&
-      !conversation.human_handoff;
 
-    // 1) Greeting or explicit menu request → Main Menu. Strictly
+    // 1) Greeting or explicit menu request → Main Menu, ALWAYS (product
+    //    decision 2026-07-23: a parent typing "Hi" must always get the menu
+    //    back — including mid-qualifying, mid-admission-collection, or after
+    //    a handoff — so it works as a universal "start over" escape hatch;
+    //    never leaves a parent stuck answering a question they don't want to
+    //    continue). deterministicTurn below resets stage to "greeting" and
+    //    human_handoff to false, matching a genuine fresh start. Strictly
     //    greeting-ONLY messages ("Hi", "Good morning") — a message with any
-    //    stated intent skips the menu and is answered directly. Never
-    //    interrupts qualifying/booking/handoff (menuAllowedHere).
-    if (menuAllowedHere && (isGreetingOnly(payload.body) || isMenuRequest(payload.body))) {
-      const menuText = renderMainMenuText({ clinicName: knowledge.profile.name, patientName: persisted?.name ? String(persisted.name) : payload.contactName });
+    //    stated intent skips the menu and is answered directly. A real
+    //    in-flight booking attempt (booking_status: booking_in_progress) is
+    //    still protected — that's short-circuited earlier, before this code
+    //    ever runs, and is unaffected by this always-on greeting behaviour.
+    if (isGreetingOnly(payload.body) || isMenuRequest(payload.body)) {
+      const menuText = renderMainMenuText({ schoolName: knowledge.profile.name, parentName: persisted?.name ? String(persisted.name) : payload.contactName });
       const actions: Action[] = knowledge.profile.interactive_enabled
-        ? [renderMainMenu({ clinicName: knowledge.profile.name, patientName: persisted?.name ? String(persisted.name) : payload.contactName })]
+        ? [renderMainMenu({ schoolName: knowledge.profile.name, parentName: persisted?.name ? String(persisted.name) : payload.contactName })]
         : [{ action: "reply_text", screen: "main_menu", data: { text: menuText } }];
       return deterministicTurn({ actions, textRendering: menuText, stage: "greeting", intent: "greeting" });
     }
 
-    // 2) Menu picks — taps (menu_* ids) or a typed 1-6 right after the menu.
+    // 2) Menu picks — taps (menu_* ids) or a typed 1-10 right after the menu.
     const menuSelection = resolveMenuSelection({
       body: payload.body,
       interactiveReplyId: payload.interactiveReplyId,
       currentScreen: conversation.current_screen,
     });
     let effectiveBody = payload.body;
-    if (menuSelection === "menu_talk_to_human") {
+    if (menuSelection === "menu_contact_office") {
       const reply = renderHandoffText({
         receptionPhone: knowledge.profile.reception_phone,
         openingHoursText: formatOpeningHours(knowledge.profile.opening_hours) ?? knowledge.profile.timings,
@@ -345,120 +381,292 @@ export const replyPipelineTask = task({
         actions: [
           {
             action: "show_location",
-            screen: "clinic_location",
-            data: { clinicName: knowledge.profile.name, address: knowledge.profile.address, mapsUrl: knowledge.profile.maps_url },
+            screen: "school_location",
+            data: { schoolName: knowledge.profile.name, address: knowledge.profile.address, mapsUrl: knowledge.profile.maps_url },
           },
         ],
         textRendering: lines.join("\n"),
         stage: "faq",
         intent: "location",
       });
-    } else if (menuSelection === "menu_clinic_timings") {
+    } else if (menuSelection === "menu_school_timings") {
       // Just the fact — no "would you like to book?" tacked on. Every menu
       // answer ending with the same booking nudge read as robotic nagging
       // (product feedback 2026-07-18); the menu is always one tap away.
       const hours = formatOpeningHours(knowledge.profile.opening_hours) ?? knowledge.profile.timings;
       const reply = hours
         ? `We are open: ${hours}.`
-        : "Our staff will share the timings with you soon.";
+        : "Our office will share the timings with you soon.";
       return deterministicTurn({
         actions: [{ action: "reply_text", screen: "faq_answer", data: { text: reply } }],
         textRendering: reply,
         stage: "faq",
-        intent: "clinic_timings",
+        intent: "school_timings",
       });
-    } else if (menuSelection === "menu_consultation_fee" && knowledge.profile.consultation_fee !== null) {
-      const reply = `Our consultation fee is ₹${knowledge.profile.consultation_fee}.`;
+    } else if (menuSelection === "menu_ask_anything") {
+      const reply = "Sure — go ahead and type your question.";
+      return deterministicTurn({
+        actions: [{ action: "reply_text", screen: "free_text", data: { text: reply } }],
+        textRendering: reply,
+        stage: "greeting",
+        intent: "general_enquiry",
+      });
+    } else if (menuSelection === "menu_transport") {
+      // Sends the school's bus routes/schedule PDF when one is configured
+      // (school_assets, 0014_school_assets.sql) — the channel adapter only
+      // renders an already-resolved fileUrl, it never decides whether one
+      // exists (DECISION_ENGINE.md §4). Falls back to the transport FAQ text
+      // exactly like every other menu item when no PDF is configured yet —
+      // never invent a file that doesn't exist (CLAUDE.md §5).
+      const faq = knowledge.faqs.find((f) => f.category === "transport");
+      const fallbackText = faq ? faq.answer : "Our office will share these details with you.";
+      const asset = await getSchoolAsset(schoolId, TRANSPORT_PDF_ASSET_KEY);
+      const actions: Action[] = asset
+        ? [
+            {
+              action: "send_pdf",
+              screen: "faq_answer",
+              data: {
+                assetKey: TRANSPORT_PDF_ASSET_KEY,
+                fileUrl: asset.file_url,
+                filename: asset.filename,
+                caption: asset.caption ?? fallbackText,
+                fallbackText,
+              },
+            },
+          ]
+        : [{ action: "reply_text", screen: "faq_answer", data: { text: fallbackText } }];
+      return deterministicTurn({
+        actions,
+        textRendering: asset?.caption ?? fallbackText,
+        stage: "faq",
+        intent: "transport",
+      });
+    } else if (menuSelection === "menu_fee_structure") {
+      // Sends the school's fee structure PDF when one is configured
+      // (school_assets, 0014_school_assets.sql) — same pattern as Transport
+      // above. Falls back to the fee_structure FAQ text exactly like every
+      // other menu item when no file is configured yet — never invent a
+      // file that doesn't exist (CLAUDE.md §5).
+      const faq = knowledge.faqs.find((f) => f.category === "fee_structure");
+      const fallbackText = faq ? faq.answer : "Our office will share these details with you.";
+      const asset = await getSchoolAsset(schoolId, FEE_STRUCTURE_ASSET_KEY);
+      const actions: Action[] = asset
+        ? [
+            {
+              action: "send_pdf",
+              screen: "faq_answer",
+              data: {
+                assetKey: FEE_STRUCTURE_ASSET_KEY,
+                fileUrl: asset.file_url,
+                filename: asset.filename,
+                caption: asset.caption ?? fallbackText,
+                fallbackText,
+              },
+            },
+          ]
+        : [{ action: "reply_text", screen: "faq_answer", data: { text: fallbackText } }];
+      return deterministicTurn({
+        actions,
+        textRendering: asset?.caption ?? fallbackText,
+        stage: "faq",
+        intent: "fee_structure",
+      });
+    } else if (menuSelection && FAQ_MENU_ITEMS[menuSelection]) {
+      // Each mirrors a school_faqs category 1:1 (0012_rename_clinic_to_school.sql).
+      // Fact not configured yet → say so rather than invent one (CLAUDE.md §5
+      // "Never invent").
+      const { category, intent } = FAQ_MENU_ITEMS[menuSelection];
+      const faq = knowledge.faqs.find((f) => f.category === category);
+      const reply = faq ? faq.answer : "Our office will share these details with you.";
       return deterministicTurn({
         actions: [{ action: "reply_text", screen: "faq_answer", data: { text: reply } }],
         textRendering: reply,
         stage: "faq",
-        intent: "consultation_fee",
+        intent,
       });
-    } else if (menuSelection === "menu_treatments" && knowledge.services.length > 0) {
-      const lines = knowledge.services.map((s) => `• ${s.display_name}`);
-      const reply = `Here is what we offer:\n\n${lines.join("\n")}\n\nReply with a treatment name to know more.`;
-      return deterministicTurn({
-        actions: knowledge.profile.interactive_enabled
-          ? [renderTreatmentsList(knowledge.services)]
-          : [{ action: "reply_text", screen: "treatment_info", data: { text: reply } }],
-        textRendering: reply,
-        stage: "faq",
-        intent: "general_treatment_enquiry",
-      });
-    } else if (menuSelection === "menu_book_appointment") {
-      // >1 active doctor → let the patient pick first (data-driven; the
-      // pilot clinic has one doctor, so this list only appears when a
-      // clinic actually has a choice to make).
-      if (knowledge.profile.interactive_enabled && knowledge.doctors.length > 1) {
-        const action = renderDoctorList(knowledge.doctors);
-        const textRendering = `Which doctor would you like to see?\n\n${knowledge.doctors.map((d, i) => `${i + 1}. ${d.name}${d.role ? ` — ${d.role}` : ""}`).join("\n")}`;
-        return deterministicTurn({ actions: [action], textRendering, stage: "qualifying", intent: "book_appointment" });
-      }
-      // Single doctor: straight into the conversational booking flow.
-      effectiveBody = "I want to book an appointment";
-      // A fresh booking START must not inherit day/time preferences from an
-      // earlier booking attempt — production bug: "preferred: Today 7:00 PM"
-      // remembered from a test hours earlier made the pipeline treat the
-      // new request as "Today 7 PM stated" and skip the day picker.
-      const cleanedForFreshStart = { ...(conversation.collected_slots as Record<string, unknown>) };
-      delete cleanedForFreshStart.preferred_date;
-      delete cleanedForFreshStart.preferred_time;
-      conversation.collected_slots = cleanedForFreshStart;
-    } else if (menuSelection === "menu_consultation_fee" || menuSelection === "menu_treatments") {
-      // Fact not configured in clinic knowledge — let the AI handle it
-      // (which per the prompt hands off rather than inventing a value).
-      effectiveBody = menuSelection === "menu_consultation_fee" ? "What is the consultation fee?" : "What treatments do you offer?";
+    } else if (menuSelection === "menu_admission_enquiry") {
+      // Admission Desk sub-menu (redesigned 2026-07-23) — see
+      // lib/decision-engine/admissionMenu.ts. Fully deterministic; the
+      // conversational AI qualifying flow is no longer the entry point here.
+      const textRendering = renderAdmissionMenuText();
+      const actions: Action[] = knowledge.profile.interactive_enabled
+        ? [renderAdmissionMenu()]
+        : [{ action: "reply_text", screen: "admission_menu", data: { text: textRendering } }];
+      return deterministicTurn({ actions, textRendering, stage: "qualifying", intent: "admission_enquiry" });
     }
 
-    // 2b) Treatment pick (tap on treatment_<service_key>) → just that
-    //     treatment's info, plain reply. Booking already has its own menu
-    //     item — a Book button here was a redundant second path (product
-    //     decision 2026-07-18). The tapped treatment is still quietly saved
-    //     as the patient's concern, so if they DO go on to book, they're
-    //     never re-asked what they're coming in for.
-    if (payload.interactiveReplyId?.startsWith("treatment_")) {
-      const serviceKey = payload.interactiveReplyId.slice("treatment_".length);
-      const service = knowledge.services.find((s) => s.service_key === serviceKey);
-      if (service) {
-        const info = service.high_level_info ?? `${service.display_name} is one of our treatments.`;
-        const text = `${service.display_name}: ${info}`;
-        return deterministicTurn({
-          actions: [{ action: "reply_text", screen: "treatment_info", data: { text } }],
-          textRendering: text,
-          stage: "faq",
-          collected: { concern: service.display_name },
-          intent: "general_treatment_enquiry",
+    // ── Admission Desk sub-flow (redesigned 2026-07-23) ───────────────────
+    // Isolated from every other menu item — fully deterministic, no AI call
+    // anywhere below. Reached only via menu_admission_enquiry above, which
+    // shows the Admission Desk menu. See lib/decision-engine/admissionMenu.ts
+    // for every screen's rendering and selection-resolution logic.
+    const admissionSelectionInput = {
+      body: payload.body,
+      interactiveReplyId: payload.interactiveReplyId,
+      currentScreen: conversation.current_screen,
+    };
+
+    /** Renders one Admission Desk screen, respecting interactive_enabled — mirrors the show_list/text dual-path pattern used everywhere else in this file. */
+    const admissionScreenTurn = (params: {
+      interactive: Extract<Action, { action: "show_list" }> | null;
+      text: string;
+      screen: Action["screen"];
+      collected?: CollectedSlots;
+      humanHandoff?: boolean;
+      handoffReason?: HandoffReason | null;
+    }) => {
+      const actions: Action[] =
+        knowledge.profile.interactive_enabled && params.interactive
+          ? [params.interactive]
+          : [{ action: "reply_text", screen: params.screen, data: { text: params.text } }];
+      return deterministicTurn({
+        actions,
+        textRendering: params.text,
+        stage: "qualifying",
+        collected: params.collected,
+        humanHandoff: params.humanHandoff,
+        handoffReason: params.handoffReason,
+        intent: "admission_enquiry",
+      });
+    };
+
+    /** Shows the real Main Menu — used both for the Admission Desk's own "Back to Main Menu" item AND every sub-screen's plain "Back" (product decision 2026-07-23: one tap home from anywhere in the Admission Desk, not a nested up-one-level). */
+    const renderMainMenuScreen = () => {
+      const persistedName = persisted?.name ? String(persisted.name) : payload.contactName;
+      const menuText = renderMainMenuText({ schoolName: knowledge.profile.name, parentName: persistedName });
+      const actions: Action[] = knowledge.profile.interactive_enabled
+        ? [renderMainMenu({ schoolName: knowledge.profile.name, parentName: persistedName })]
+        : [{ action: "reply_text", screen: "main_menu", data: { text: menuText } }];
+      return deterministicTurn({ actions, textRendering: menuText, stage: "greeting", intent: "greeting" });
+    };
+
+    const startAdmissionOfficeCollection = () => {
+      // Direct contact number + hours alongside the enquiry collector, so a
+      // parent who'd rather just call isn't only offered the WhatsApp form
+      // (product decision 2026-07-23) — same phone/hours source as the main
+      // "Contact School Office" handoff (lib/decision-engine/mainMenu.ts).
+      const askText = renderAskParentNameText({
+        receptionPhone: knowledge.profile.reception_phone,
+        openingHoursText: formatOpeningHours(knowledge.profile.opening_hours) ?? knowledge.profile.timings,
+      });
+      return admissionScreenTurn({ interactive: null, text: askText, screen: "admission_collect_parent_name" });
+    };
+
+    // 1) Top-level Admission Desk menu picks — each info item is a single,
+    // terminal text reply (product decision 2026-07-24): no follow-on
+    // "Continue"/"Need help?" list chaining one screen into the next, which
+    // left parents stuck in an endless menu-in-menu loop with no ending
+    // point. The parent can always type "menu" or ask a follow-up question.
+    const admSelection = resolveAdmissionMenuSelection(admissionSelectionInput);
+    if (admSelection === "adm_back_main") {
+      return renderMainMenuScreen();
+    } else if (admSelection === "adm_open") {
+      return admissionScreenTurn({ interactive: null, text: renderAdmissionStatusText(), screen: "admission_open_result" });
+    } else if (admSelection === "adm_process") {
+      return admissionScreenTurn({ interactive: null, text: renderAdmissionProcessText(), screen: "admission_process" });
+    } else if (admSelection === "adm_documents") {
+      return admissionScreenTurn({ interactive: null, text: renderRequiredDocumentsText(), screen: "admission_documents" });
+    } else if (admSelection === "adm_talk_office") {
+      return startAdmissionOfficeCollection();
+    }
+
+    // 2) "Talk to Admission Office" — one question at a time, no AI call.
+    if (conversation.current_screen === "admission_collect_parent_name") {
+      const name = payload.body.trim();
+      if (!name) {
+        return admissionScreenTurn({
+          interactive: null,
+          text: `Sorry, I didn't catch that.\n\nWhat is your name?`,
+          screen: "admission_collect_parent_name",
         });
       }
+      return admissionScreenTurn({ interactive: null, text: ASK_STUDENT_NAME_TEXT, screen: "admission_collect_student_name", collected: { name } });
     }
-
-    // 3) Doctor pick (tap on doctor_<index>) → capture + continue to booking.
-    if (payload.interactiveReplyId?.startsWith("doctor_")) {
-      const index = parseInt(payload.interactiveReplyId.slice("doctor_".length), 10);
-      const doctor = knowledge.doctors[index];
-      if (doctor) effectiveBody = `I want to book an appointment with ${doctor.name}`;
+    if (conversation.current_screen === "admission_collect_student_name") {
+      const childName = payload.body.trim();
+      if (!childName) {
+        return admissionScreenTurn({ interactive: null, text: `Sorry, I didn't catch that. ${ASK_STUDENT_NAME_TEXT}`, screen: "admission_collect_student_name" });
+      }
+      return admissionScreenTurn({
+        interactive: renderAskClass(knowledge.services),
+        text: renderAskClassText(knowledge.services),
+        screen: "admission_collect_class",
+        collected: { child_name: childName },
+      });
     }
+    if (conversation.current_screen === "admission_collect_class") {
+      const sel = resolveAskClassSelection(knowledge.services, admissionSelectionInput);
+      let gradeApplyingFor: string | null = null;
+      if (sel?.startsWith(ADM_COLLECT_CLASS_PREFIX)) {
+        const service = knowledge.services.find((s) => s.service_key === sel.slice(ADM_COLLECT_CLASS_PREFIX.length));
+        gradeApplyingFor = service?.display_name ?? null;
+      } else if (!payload.interactiveReplyId && payload.body.trim()) {
+        // No picker match — accept a free-typed class name as-is rather than
+        // forcing the parent back through the list (PATIENT_EXPERIENCE.md §6.2
+        // "every tap has a typed equivalent" — this is the reverse case, every
+        // typed answer is also accepted even off-list).
+        gradeApplyingFor = payload.body.trim();
+      }
+      if (gradeApplyingFor) {
+        return admissionScreenTurn({ interactive: null, text: ASK_MESSAGE_TEXT, screen: "admission_collect_message", collected: { grade_applying_for: gradeApplyingFor } });
+      }
+      return admissionScreenTurn({
+        interactive: renderAskClass(knowledge.services),
+        text: `Sorry, I didn't catch that. ${renderAskClassText(knowledge.services)}`,
+        screen: "admission_collect_class",
+      });
+    }
+    if (conversation.current_screen === "admission_collect_message") {
+      const raw = payload.body.trim();
+      const message = isSkipMessage(raw) || !raw ? null : raw;
+      const collectedSoFar = conversation.collected_slots as CollectedSlots;
+      const parentName = collectedSoFar.name ? String(collectedSoFar.name) : payload.contactName ?? "Parent";
+      const childName = collectedSoFar.child_name ? String(collectedSoFar.child_name) : "";
+      const gradeApplyingFor = collectedSoFar.grade_applying_for ? String(collectedSoFar.grade_applying_for) : null;
 
-    // 4) Confirmation-button taps (from the slot-tap confirm step below).
+      await insertAdmissionOfficeEnquiry({
+        schoolId,
+        parentId: parent.id,
+        conversationId: conversation.id,
+        name: parentName,
+        childName,
+        gradeApplyingFor,
+        mobile: parent.wa_phone,
+        message,
+      });
+
+      return deterministicTurn({
+        actions: [{ action: "reply_text", screen: "admission_enquiry_confirmation", data: { text: ADMISSION_ENQUIRY_CONFIRMATION_TEXT } }],
+        textRendering: ADMISSION_ENQUIRY_CONFIRMATION_TEXT,
+        stage: "handoff",
+        humanHandoff: true,
+        handoffReason: "explicit_request",
+        collected: message ? { enquiry_details: message } : {},
+        intent: "admission_enquiry",
+      });
+    }
+    // ── end Admission Desk sub-flow ────────────────────────────────────────
+
+    // 3) Confirmation-button taps (from the slot-tap confirm step below).
     //    confirm_slot_<id> carries the exact slot id — stateless, same trick
     //    as list rows. change_slot re-opens the picker conversationally.
     let confirmedTapSlotId: string | null = null;
     if (payload.interactiveReplyId?.startsWith("confirm_slot_")) {
       confirmedTapSlotId = payload.interactiveReplyId.slice("confirm_slot_".length);
-      effectiveBody = "Confirm my appointment";
+      effectiveBody = "Confirm my visit";
     } else if (payload.interactiveReplyId === "change_slot") {
       effectiveBody = "Please show me other available times";
     }
 
-    // 5) Day pick (tap on day_<date>) → that day's times as a tappable list.
-    //    Day-first booking (PATIENT_EXPERIENCE.md §5): the patient chose a
+    // 4) Day pick (tap on day_<date>) → that day's times as a tappable list.
+    //    Day-first booking (PATIENT_EXPERIENCE.md §5): the parent chose a
     //    day from the day picker; show ONLY that day's free times.
     //    Deterministic — no AI call.
     let tappedDayKey = payload.interactiveReplyId ? parseDayRowId(payload.interactiveReplyId) : null;
     // Typed equivalent: "Saturday" / "today" typed right after the day
     // picker resolves like a tap — WITHOUT this, a typed day-only reply
-    // has no time to parse, falls to the generic flow, and the patient
+    // has no time to parse, falls to the generic flow, and the parent
     // gets the day picker again in a loop (PATIENT_EXPERIENCE.md §6.2).
     if (!tappedDayKey && conversation.current_screen === "day_picker" && !/\d/.test(payload.body)) {
       tappedDayKey = resolveTypedDay({
@@ -468,7 +676,7 @@ export const replyPipelineTask = task({
       });
     }
     if (tappedDayKey && knowledge.profile.auto_confirm_enabled) {
-      const daySlots = await listAvailableSlots({ clinicId, dayKey: tappedDayKey });
+      const daySlots = await listAvailableSlots({ schoolId, dayKey: tappedDayKey });
       if (daySlots && daySlots.length > 0) {
         const dayLabel = daySlots[0]!.label.split(" – ")[0]!;
         const leadIn = `Times for ${dayLabel} — which works for you?`;
@@ -479,12 +687,12 @@ export const replyPipelineTask = task({
           stage: "booking",
           collected: { preferred_date: dayLabel },
           bookingStatus: transitionBookingStatus(conversation.booking_status, "waiting_for_confirmation"),
-          intent: "book_appointment",
+          intent: "book_visit",
         });
       }
       if (daySlots) {
         // That day filled up between the picker and the tap — re-offer days.
-        const days = await listOpenDays(clinicId);
+        const days = await listOpenDays(schoolId);
         if (days && days.length > 0) {
           const text = `Sorry, that day is now full.\n\n${renderDayPickerText(days)}`;
           const actions = translateTurnToActions({
@@ -493,7 +701,7 @@ export const replyPipelineTask = task({
             interactiveEnabled: knowledge.profile.interactive_enabled,
             presentedDays: days,
           });
-          return deterministicTurn({ actions, textRendering: text, stage: "booking", intent: "book_appointment" });
+          return deterministicTurn({ actions, textRendering: text, stage: "booking", intent: "book_visit" });
         }
         const text =
           "Sorry, that day is now full, and no other days are open this week. Our staff will message you soon with new times.";
@@ -501,7 +709,7 @@ export const replyPipelineTask = task({
           actions: [{ action: "reply_text", screen: "booking_failed", data: { text } }],
           textRendering: text,
           stage: "booking",
-          intent: "book_appointment",
+          intent: "book_visit",
         });
       }
       // daySlots === null → calendar connection is down; fall through to the
@@ -510,13 +718,13 @@ export const replyPipelineTask = task({
     // ── end deterministic screens; the AI takes it from here ─────────────
 
     // Only check real availability once the conversation has already reached
-    // the booking stage (i.e. qualifying is done) and the clinic has opted
+    // the booking stage (i.e. qualifying is done) and the school has opted
     // into calendar-checked auto-confirmation. getSchedulingProvider returns
     // null if no calendar is connected/working, which naturally falls back
     // to the legacy free-text flow below — see
     // /docs/GOOGLE_CALENDAR_INTEGRATION.md §2, §6, §10.
     //
-    // requestedTarget resolves the patient's CURRENT message into an exact
+    // requestedTarget resolves the parent's CURRENT message into an exact
     // date/time when unambiguous ("today"/"tomorrow" + a clear AM/PM time).
     // Production bug this fixes: listAvailableSlots used to always return
     // the chronologically-earliest slots with zero awareness of what was
@@ -525,19 +733,19 @@ export const replyPipelineTask = task({
     // /docs/GOOGLE_CALENDAR_INTEGRATION.md §6/§7.
     let availableSlots: SchedulingSlot[] | null = null;
     let requestedTarget: DateTime | null = null;
-    let clinicTimezone: string | null = null;
+    let schoolTimezone: string | null = null;
     // Production bug this gate-widening fixes: slots were fetched ONLY when
     // the conversation was already at stage "booking" when the turn started
-    // — but a patient's FIRST booking message ("I want to book appointment
-    // for today 7 pm") arrives while the stage is still greeting/faq, so
-    // that turn had no availability data, the model set presenting_slots
-    // anyway, and the patient got the dead-end "let me check our calendar"
-    // fallback with no follow-up ever coming. Fetch availability whenever
-    // the current message itself clearly signals booking intent (mentions
-    // booking words or resolves to a concrete date/time), not just when the
-    // persisted stage already caught up.
+    // — but a parent's FIRST booking message ("I want to book a visit for
+    // today 7 pm") arrives while the stage is still greeting/faq, so that
+    // turn had no availability data, the model set presenting_slots anyway,
+    // and the parent got the dead-end "let me check our calendar" fallback
+    // with no follow-up ever coming. Fetch availability whenever the current
+    // message itself clearly signals booking intent (mentions booking words
+    // or resolves to a concrete date/time), not just when the persisted
+    // stage already caught up.
     const currentMessageSignalsBooking =
-      /\b(book|appointment|slot|schedule|reschedul|confirm)/i.test(effectiveBody) ||
+      /\b(book|visit|appointment|slot|schedule|reschedul|confirm)/i.test(effectiveBody) ||
       Boolean(payload.interactiveReplyId) ||
       resolveRequestedDateTime({
         text: effectiveBody,
@@ -545,13 +753,13 @@ export const replyPipelineTask = task({
         now: new Date(),
       }) !== null;
     if ((conversation.stage === "booking" || currentMessageSignalsBooking) && knowledge.profile.auto_confirm_enabled) {
-      const provider = await getSchedulingProvider(clinicId);
+      const provider = await getSchedulingProvider(schoolId);
       if (provider) {
         // Production bug this fixes: once a specific slot has been offered,
-        // a patient confirming it ("Confirm it", "Yes", "Ok") mentions no
+        // a parent confirming it ("Confirm it", "Yes", "Ok") mentions no
         // day/time at all, so resolveRequestedDateTime(payload.body) returns
         // null — which silently fell back to "today's earliest slots" and
-        // dropped the slot the patient was actually confirming. The model
+        // dropped the slot the parent was actually confirming. The model
         // then had no valid selected_slot_id to book against and stalled in
         // an "I'll confirm with our team" loop forever. Falling back to the
         // already-collected preferred_date/preferred_time (captured earlier
@@ -568,16 +776,16 @@ export const replyPipelineTask = task({
           }) !== null;
         // Day-first flow: "6 pm" typed AFTER picking Saturday means Saturday
         // 6 pm — a bare time parses as "today", which would silently switch
-        // the day the patient just chose. If the message states a time but
+        // the day the parent just chose. If the message states a time but
         // no day, the day they already picked wins.
         const bodyMentionsDay =
           /\b(today|tomorrow|now|mon|tue|wed|thu|fri|sat|sun)\w*\b/i.test(effectiveBody) ||
           /\d{1,2}[/\-]\d{1,2}/.test(effectiveBody);
         // The remembered-preferences fallback exists for CONTINUATION turns
         // ("yes confirm it", a bare "6 pm" after picking a day) — i.e. only
-        // while an offer is actually awaiting the patient's answer. A fresh
+        // while an offer is actually awaiting the parent's answer. A fresh
         // booking request must never inherit an old preference — production
-        // bug: "Book Appointment" tapped hours after an earlier test reused
+        // bug: "Admission Enquiry" tapped hours after an earlier test reused
         // "Today 7:00 PM" and skipped the day picker.
         const offerAwaitingAnswer = conversation.booking_status === "waiting_for_confirmation";
         if (
@@ -593,7 +801,7 @@ export const replyPipelineTask = task({
         availableSlots = await provider.listAvailableSlots({ requestHint });
         logger.info("Loaded available slots", { count: availableSlots.length, ms: elapsed() });
 
-        clinicTimezone = knowledge.profile.timezone;
+        schoolTimezone = knowledge.profile.timezone;
         requestedTarget = resolveRequestedDateTime({
           text: requestHint,
           timezone: knowledge.profile.timezone,
@@ -605,7 +813,7 @@ export const replyPipelineTask = task({
     //    (PATIENT_EXPERIENCE.md §4 booking_confirmation moment). The tapped
     //    label's date/time is merged into collected state so a typed
     //    "confirm"/"yes" resolves to the same slot as tapping [Confirm].
-    //    Deterministic — no AI call. Only for interactive clinics; only for
+    //    Deterministic — no AI call. Only for interactive schools; only for
     //    raw slot-row taps (confirm_slot_* taps continue below and book).
     if (
       knowledge.profile.interactive_enabled &&
@@ -615,9 +823,7 @@ export const replyPipelineTask = task({
     ) {
       const tappedRow = availableSlots.find((slot) => slot.id === payload.interactiveReplyId);
       if (tappedRow) {
-        const [datePart, timePart] = tappedRow.label.split(" – ");
-        const doctorName = knowledge.doctors[0]?.name;
-        const confirmText = `Book ${tappedRow.label}${doctorName ? ` with ${doctorName}` : ""}?`;
+        const confirmText = `Book ${tappedRow.label}?`;
         const textRendering = `${confirmText}\n\nReply "confirm" to book it, or "change" to see other times.`;
         return deterministicTurn({
           actions: [
@@ -635,9 +841,9 @@ export const replyPipelineTask = task({
           ],
           textRendering,
           stage: "booking",
-          collected: { preferred_date: datePart, preferred_time: timePart },
+          collected: { preferred_date: tappedRow.label.split(" – ")[0], preferred_time: tappedRow.label.split(" – ")[1] },
           bookingStatus: transitionBookingStatus(conversation.booking_status, "waiting_for_confirmation"),
-          intent: "book_appointment",
+          intent: "book_visit",
         });
       }
     }
@@ -649,7 +855,7 @@ export const replyPipelineTask = task({
     // datetime, and the slots actually returned — see
     // /docs/GOOGLE_CALENDAR_INTEGRATION.md §6/§7/§8.
     logger.info("Booking request diagnostics", {
-      patientMessage: effectiveBody,
+      parentMessage: effectiveBody,
       collectedPreferredDate: (conversation.collected_slots as CollectedSlots | undefined)?.preferred_date ?? null,
       collectedPreferredTime: (conversation.collected_slots as CollectedSlots | undefined)?.preferred_time ?? null,
       parsedTargetDateTime: requestedTarget?.toISO() ?? null,
@@ -663,7 +869,7 @@ export const replyPipelineTask = task({
     const collectedInfoBlock = renderCollectedInfoBlock(conversation.collected_slots as CollectedSlots);
 
     const messages = buildMessages({
-      clinicName: knowledge.profile.name,
+      schoolName: knowledge.profile.name,
       knowledgeBlock,
       collectedInfoBlock,
       availableSlotsBlock,
@@ -693,7 +899,7 @@ export const replyPipelineTask = task({
       // Production incident ("Monday 10am"): a transient failure here used
       // to fail closed to "staff will help you soon" even though the
       // pipeline had ALREADY verified the exact requested slot was free —
-      // ejecting a mid-booking patient for no patient-visible reason. When
+      // ejecting a mid-booking parent for no parent-visible reason. When
       // we hold real availability data and the message trips no safety
       // pattern, degrade to deterministically presenting the real slots
       // (zero model involvement, nothing invented) instead of handing off.
@@ -706,16 +912,16 @@ export const replyPipelineTask = task({
         logger.info("Degrading to deterministic slot presentation instead of handoff");
         output = {
           reply: "Here are the open times:",
-          intent: "book_appointment",
+          intent: "book_visit",
           collected: {},
-          appointment_request: null,
+          enquiry_request: null,
           booking_selection: null,
           presenting_slots: true,
           human_handoff: false,
           handoff_reason: null,
         };
       } else {
-        // Transient failure on an ordinary message — ask the patient to
+        // Transient failure on an ordinary message — ask the parent to
         // repeat rather than escalate. Staff are never pulled into normal
         // FAQ/booking traffic; a human handoff needs an explicit request or
         // a safety signal, not an HTTP hiccup.
@@ -724,7 +930,7 @@ export const replyPipelineTask = task({
           reply: "Sorry, I didn't catch that. Could you type it once more?",
           intent: "unknown",
           collected: {},
-          appointment_request: null,
+          enquiry_request: null,
           booking_selection: null,
           presenting_slots: false,
           human_handoff: false,
@@ -739,40 +945,40 @@ export const replyPipelineTask = task({
     // Prompt-level guardrail backed up in code, per CLAUDE.md §3 ("never rely
     // on the model alone"): these two paths are meant to be mutually
     // exclusive, but a model that ignores the instruction and populates both
-    // would otherwise create a duplicate legacy appointment_requests row
+    // would otherwise create a duplicate legacy admission_enquiries row
     // alongside the real calendar booking. booking_selection wins because
-    // it's calendar-verified; appointment_request is not.
-    if (output.appointment_request && output.booking_selection) {
-      logger.error("Model returned both appointment_request and booking_selection", {
+    // it's calendar-verified; enquiry_request is not.
+    if (output.enquiry_request && output.booking_selection) {
+      logger.error("Model returned both enquiry_request and booking_selection", {
         intent: output.intent,
       });
-      output = { ...output, appointment_request: null };
+      output = { ...output, enquiry_request: null };
     }
 
     // Prompt-level guardrail backed up in code: the model has, in testing,
-    // populated appointment_request with blank placeholder strings before it
-    // actually had the patient's details (e.g. mid-qualifying, before a name
+    // populated enquiry_request with blank placeholder strings before it
+    // actually had the parent's details (e.g. mid-qualifying, before a name
     // was even given). Inserting that would create a garbage
-    // appointment_requests row — require every field to be genuinely filled.
+    // admission_enquiries row — require every field to be genuinely filled.
     if (
-      output.appointment_request &&
-      (!output.appointment_request.name.trim() ||
-        !output.appointment_request.preferred_date.trim() ||
-        !output.appointment_request.preferred_time.trim() ||
-        !output.appointment_request.reason.trim())
+      output.enquiry_request &&
+      (!output.enquiry_request.name.trim() ||
+        !output.enquiry_request.preferred_date.trim() ||
+        !output.enquiry_request.preferred_time.trim() ||
+        !output.enquiry_request.reason.trim())
     ) {
-      logger.error("Model returned an incomplete appointment_request — dropping it", {
-        appointmentRequest: output.appointment_request,
+      logger.error("Model returned an incomplete enquiry_request — dropping it", {
+        enquiryRequest: output.enquiry_request,
       });
-      output = { ...output, appointment_request: null };
+      output = { ...output, enquiry_request: null };
     }
 
-    // V2 interactive: the patient TAPPED a slot row (Meta echoed back the
+    // V2 interactive: the parent TAPPED a slot row (Meta echoed back the
     // exact id we sent). If the model didn't turn that tap into a
     // booking_selection itself, synthesize one — a physical tap on an
     // offered slot is the least ambiguous booking signal possible, and it
-    // must never be lost to model noise. Requires the patient's name to
-    // already be collected (the prompt gates slot offers on name+concern).
+    // must never be lost to model noise. Requires the parent's name to
+    // already be collected (the prompt gates slot offers on name+reason).
     const effectiveTapSlotId = confirmedTapSlotId ?? payload.interactiveReplyId ?? null;
     const tappedSlot = effectiveTapSlotId
       ? availableSlots?.find((slot) => slot.id === effectiveTapSlotId)
@@ -781,7 +987,7 @@ export const replyPipelineTask = task({
       const persisted = conversation.collected_slots as CollectedSlots | undefined;
       const name = output.collected.name ?? persisted?.name;
       const reason =
-        output.collected.reason ?? output.collected.concern ?? persisted?.reason ?? persisted?.concern;
+        output.collected.reason ?? output.collected.enquiry_details ?? persisted?.reason ?? persisted?.enquiry_details;
       if (name) {
         logger.info("Synthesizing booking_selection from tapped slot row", {
           tappedSlotId: tappedSlot.id,
@@ -789,10 +995,10 @@ export const replyPipelineTask = task({
         });
         output = {
           ...output,
-          appointment_request: null,
+          enquiry_request: null,
           booking_selection: {
             name: String(name),
-            reason: String(reason ?? "Consultation"),
+            reason: String(reason ?? "Admission enquiry"),
             selected_slot_id: tappedSlot.id,
           },
         };
@@ -817,7 +1023,7 @@ export const replyPipelineTask = task({
     // end-of-turn write — see transitionBookingStatus()'s one-way rule.
     let currentBookingStatus: BookingStatus = conversation.booking_status;
     // The slots behind whatever bullet list finalReply ends up containing —
-    // for interactive clinics these render as a tappable WhatsApp list
+    // for interactive schools these render as a tappable WhatsApp list
     // (translateTurnToActions) instead of text bullets. Set alongside every
     // finalReply assignment that renders a slot list.
     let presentedSlots: SchedulingSlot[] | null = null;
@@ -829,23 +1035,23 @@ export const replyPipelineTask = task({
 
     // Prompt-level guardrail backed up in code: observed in production —
     // the model fabricated an entire fake slot list (a past time, and times
-    // on a day the clinic is closed) instead of faithfully relaying
+    // on a day the school is closed) instead of faithfully relaying
     // <available_slots>. The model's own free-text slot list can never be
     // trusted; whenever it signals it's presenting times, replace its reply
     // with a deterministic rendering of the real data. See
     // /docs/GOOGLE_CALENDAR_INTEGRATION.md §6.
     if (output.presenting_slots) {
       if (availableSlots !== null) {
-        // If the patient asked for a specific date/time, say so explicitly
+        // If the parent asked for a specific date/time, say so explicitly
         // when it's not exactly available, rather than a generic "here's
         // what's open" — matches the "requested slot unavailable" framing
         // required per /docs/GOOGLE_CALENDAR_INTEGRATION.md §6/§7.
         const exactMatchShown =
           requestedTarget !== null &&
           availableSlots.some((slot) => slot.startsAt === requestedTarget!.toUTC().toISO());
-        if (requestedTarget && clinicTimezone && !exactMatchShown) {
+        if (requestedTarget && schoolTimezone && !exactMatchShown) {
           finalReply = renderRequestedSlotUnavailable(
-            formatRequestedLabel(requestedTarget, clinicTimezone, new Date()),
+            formatRequestedLabel(requestedTarget, schoolTimezone, new Date()),
             availableSlots,
           );
           presentedSlots = availableSlots;
@@ -854,22 +1060,22 @@ export const replyPipelineTask = task({
           knowledge.profile.interactive_enabled &&
           !["slot_picker", "booking_confirmation"].includes(conversation.current_screen)
         ) {
-          // Day-first booking (PATIENT_EXPERIENCE.md §5): the patient hasn't
+          // Day-first booking (PATIENT_EXPERIENCE.md §5): the parent hasn't
           // named a day or time, so ask WHICH DAY before showing times —
           // only days with real free slots appear, so closed days (e.g.
           // Sunday) are impossible. A stated day/time still goes straight
-          // to the exact/nearest time flow above; a patient already inside
+          // to the exact/nearest time flow above; a parent already inside
           // a day's times never regresses back to the day picker.
-          const days = await listOpenDays(clinicId);
+          const days = await listOpenDays(schoolId);
           if (days && days.length > 1) {
             finalReply = renderDayPickerText(days);
             presentedDays = days;
           } else {
-            finalReply = renderSlotsPresentation(availableSlots, knowledge.doctors[0]?.name);
+            finalReply = renderSlotsPresentation(availableSlots);
             presentedSlots = availableSlots;
           }
         } else {
-          finalReply = renderSlotsPresentation(availableSlots, knowledge.doctors[0]?.name);
+          finalReply = renderSlotsPresentation(availableSlots);
           presentedSlots = availableSlots;
         }
       } else {
@@ -890,7 +1096,7 @@ export const replyPipelineTask = task({
       // CLAIMS_COMPLETION_PATTERN must stay broad — narrow wording checks
       // keep getting bypassed by a different phrasing of the same claim.
       !output.booking_selection &&
-      !output.appointment_request &&
+      !output.enquiry_request &&
       availableSlotsBlock !== undefined &&
       CLAIMS_COMPLETION_PATTERN.test(output.reply)
     ) {
@@ -901,7 +1107,7 @@ export const replyPipelineTask = task({
         "Sorry, let me check that time once more. Which time from the list would you like?";
     } else if (
       !output.booking_selection &&
-      !output.appointment_request &&
+      !output.enquiry_request &&
       !finalHumanHandoff &&
       availableSlotsBlock !== undefined
     ) {
@@ -910,7 +1116,7 @@ export const replyPipelineTask = task({
       // legal moves — presenting_slots, booking_selection, or a handoff.
       // Anything else is the model inventing its own status update, which is
       // exactly how "I'll confirm the exact slot now with our team" and
-      // "I'm just confirming the 6:00 PM slot..." reached patients in
+      // "I'm just confirming the 6:00 PM slot..." reached parents in
       // production without ever calling bookSlot(). A regex can only ever
       // catch phrasings seen before (CLAIMS_COMPLETION_PATTERN above already
       // needed broadening twice for that reason); this catches all of them by
@@ -920,34 +1126,34 @@ export const replyPipelineTask = task({
       // Day-first applies here too (self-test finding 2026-07-18: this
       // branch fired on the qualifying-done turn and pushed a TIME list,
       // bypassing the day picker) — but never regress to the day picker
-      // when the patient is already inside a day's times or a confirm step.
+      // when the parent is already inside a day's times or a confirm step.
       logger.error("Model produced a non-actionable reply while slots were offered — replacing with real options", {
         reply: output.reply,
       });
       const midTimeSelection = ["slot_picker", "booking_confirmation"].includes(conversation.current_screen);
       let backstopDays: DayOption[] | null = null;
       if (knowledge.profile.interactive_enabled && !requestedTarget && !midTimeSelection) {
-        backstopDays = await listOpenDays(clinicId);
+        backstopDays = await listOpenDays(schoolId);
       }
       if (backstopDays && backstopDays.length > 1) {
         finalReply = renderDayPickerText(backstopDays);
         presentedDays = backstopDays;
       } else {
-        finalReply = renderSlotsPresentation(availableSlots ?? [], knowledge.doctors[0]?.name);
+        finalReply = renderSlotsPresentation(availableSlots ?? []);
         presentedSlots = availableSlots;
       }
     }
 
     if (output.booking_selection && !finalHumanHandoff) {
       const bookingSelection = output.booking_selection;
-      const provider = await getSchedulingProvider(clinicId);
+      const provider = await getSchedulingProvider(schoolId);
 
       // Production incident (2026-07-04, "Today 7.pm"): the parser resolved
       // the time perfectly and the exact slot was free, but the model echoed
       // a corrupted slot id — the old direct id lookup found nothing,
-      // bookSlot was called with garbage, and the patient was told the time
+      // bookSlot was called with garbage, and the parent was told the time
       // was "just taken" when it never was. resolveSelectedSlot recovers
-      // deterministically from the PATIENT'S own stated time when it
+      // deterministically from the PARENT'S own stated time when it
       // identifies exactly one offered slot; anything ambiguous stays
       // unresolved and is re-presented, never guessed.
       const resolution = resolveSelectedSlot({
@@ -959,7 +1165,7 @@ export const replyPipelineTask = task({
       });
       const candidateSlot = resolution.kind === "unresolved" ? undefined : resolution.slot;
       if (resolution.kind === "recovered") {
-        logger.error("Model echoed an unknown slot id — recovered from the patient's stated time", {
+        logger.error("Model echoed an unknown slot id — recovered from the parent's stated time", {
           modelSlotId: bookingSelection.selected_slot_id,
           recoveredSlotId: resolution.slot.id,
           recoveredLabel: resolution.slot.label,
@@ -972,7 +1178,7 @@ export const replyPipelineTask = task({
       // date was ambiguous (e.g. weekday names we don't parse). Either way,
       // a mismatch aborts the booking — it is never silently overridden to
       // "the first/nearest available slot". A physical TAP is exempt: the
-      // patient selected the row itself, and the "message text" is just the
+      // parent selected the row itself, and the "message text" is just the
       // row title Meta echoed back — there is nothing to cross-check.
       let mismatch = false;
       if (resolution.kind === "tapped") {
@@ -1003,11 +1209,11 @@ export const replyPipelineTask = task({
         currentBookingStatus = transitionBookingStatus(currentBookingStatus, "failed");
         finalHumanHandoff = true;
         finalHandoffReason = "unknown";
-        finalReply = "Our clinic staff will confirm this appointment for you. They will message you soon.";
-        logger.error("Scheduling provider unavailable at booking time", { clinicId });
+        finalReply = "Our school office will confirm this booking for you.\n\nThey will message you soon.";
+        logger.error("Scheduling provider unavailable at booking time", { schoolId });
         logger.info("Booking Completed", { conversationId: conversation.id, outcome: "failed", reason: "provider_unavailable" });
       } else if (!candidateSlot) {
-        // The model's id is unknown AND the patient's words don't identify
+        // The model's id is unknown AND the parent's words don't identify
         // exactly one offered slot — never call bookSlot with an id we can't
         // verify, and never claim the time was "taken". Ask again with the
         // real list.
@@ -1015,10 +1221,10 @@ export const replyPipelineTask = task({
           modelSlotId: bookingSelection.selected_slot_id,
           body: payload.body,
         });
-        finalReply = renderSlotsPresentation(availableSlots ?? [], knowledge.doctors[0]?.name);
+        finalReply = renderSlotsPresentation(availableSlots ?? []);
         presentedSlots = availableSlots;
       } else if (mismatch) {
-        // Observed in production: the model resolved a patient's clearly
+        // Observed in production: the model resolved a parent's clearly
         // stated date/time (e.g. "tomorrow 5pm") to the WRONG id from
         // <available_slots> (e.g. "today 11am"'s id) — despite the correct
         // slot being available. Abort the booking; never substitute a
@@ -1029,16 +1235,16 @@ export const replyPipelineTask = task({
           body: payload.body,
         });
         finalReply =
-          requestedTarget && clinicTimezone
+          requestedTarget && schoolTimezone
             ? renderRequestedSlotUnavailable(
-                formatRequestedLabel(requestedTarget, clinicTimezone, new Date()),
+                formatRequestedLabel(requestedTarget, schoolTimezone, new Date()),
                 availableSlots ?? [],
               )
-            : renderSlotsPresentation(availableSlots ?? [], knowledge.doctors[0]?.name);
+            : renderSlotsPresentation(availableSlots ?? []);
         presentedSlots = availableSlots;
       } else {
         // Atomic claim, not a read-then-write check: two near-simultaneous
-        // inbound messages (e.g. the patient double-tapping "Confirm") each
+        // inbound messages (e.g. the parent double-tapping "Confirm") each
         // start their own run, and both can pass every check above before
         // either has written anything. claim_booking_attempt() is a single
         // conditional UPDATE — Postgres row-locking guarantees at most one
@@ -1057,7 +1263,7 @@ export const replyPipelineTask = task({
             conversationId: conversation.id,
           });
           finalReply =
-            "We are still booking your appointment. You don't need to do anything — we will message you as soon as it is done.";
+            "We are still booking your visit.\n\nYou don't need to do anything — we will message you as soon as it is done.";
         } else {
           // Persisted BEFORE the real Google Calendar call, not batched with
           // everything else at the end of the turn — so a crash mid-call
@@ -1076,10 +1282,10 @@ export const replyPipelineTask = task({
           // garbled its echo (see resolveSelectedSlot above).
           const bookingResult = await provider.bookSlot({
             slotId: candidateSlot.id,
-            patientId: patient.id,
+            parentId: parent.id,
             conversationId: conversation.id,
             name: bookingSelection.name,
-            mobile: patient.wa_phone,
+            mobile: parent.wa_phone,
             reason: bookingSelection.reason,
             waMessageId: payload.waMessageId,
           });
@@ -1088,11 +1294,10 @@ export const replyPipelineTask = task({
             currentBookingStatus = transitionBookingStatus(currentBookingStatus, "confirmed");
             // Never trust the model's own free-text date/time claim — always
             // state the real, verified slot so a wrong-slot-id mismatch is
-            // immediately visible to the patient instead of silently wrong.
+            // immediately visible to the parent instead of silently wrong.
             finalReply = renderBookingConfirmation({
               slot: bookingResult.slot,
-              clinicName: knowledge.profile.name,
-              doctorName: knowledge.doctors[0]?.name,
+              schoolName: knowledge.profile.name,
             });
             // Defense-in-depth audit log per requirement 7/8 — the mismatch
             // guard above should make this branch unreachable in practice
@@ -1123,7 +1328,7 @@ export const replyPipelineTask = task({
             currentBookingStatus = transitionBookingStatus(currentBookingStatus, "failed");
             // "Just taken" ONLY when a real insert conflict proved someone
             // else got it (slot_taken). Any other failure must not accuse a
-            // phantom patient of taking the slot — production incident: a
+            // phantom parent of taking the slot — production incident: a
             // stale-selection failure was worded "just taken" while the
             // alternatives list showed the same time still open.
             finalReply =
@@ -1149,7 +1354,7 @@ export const replyPipelineTask = task({
       conversation.stage,
     );
     // Intent classification can get pulled toward a side topic mentioned in
-    // the same reply (e.g. explaining clinic hours while still mid-booking),
+    // the same reply (e.g. explaining school hours while still mid-booking),
     // which would otherwise flip the stage away from "booking" and silently
     // stop showing availability next turn. If we actually showed
     // <available_slots> this turn, stay on "booking" regardless of intent —
@@ -1168,7 +1373,7 @@ export const replyPipelineTask = task({
     // overwrite" pattern; a plain FAQ/qualifying turn leaves it untouched.
     // The confirmed/failed cases were already transitioned in-memory above
     // (right next to the real bookSlot() call); this just decides whether a
-    // fresh offer this turn should now count as "awaiting the patient's yes".
+    // fresh offer this turn should now count as "awaiting the parent's yes".
     // claimLost is excluded entirely — this run never held the claim, so it
     // must never write a status that could race with (and clobber) whatever
     // the claim-holding run is about to persist.
@@ -1183,8 +1388,8 @@ export const replyPipelineTask = task({
 
     // Decision Engine migration step 1 (DECISION_ENGINE.md §6): the final
     // v1-shaped outcome is translated into an ordered action list and
-    // rendered by the channel adapter. Text-only clinics get exactly the
-    // same plain text as before; interactive clinics get slot offers as a
+    // rendered by the channel adapter. Text-only schools get exactly the
+    // same plain text as before; interactive schools get slot offers as a
     // tappable list message (PATIENT_EXPERIENCE.md §7 rollout flag).
     const actions = translateTurnToActions({
       finalReply,
@@ -1212,13 +1417,13 @@ export const replyPipelineTask = task({
         bookingStatus: finalBookingStatus,
         currentScreen: actions[actions.length - 1]?.screen,
       }),
-      output.appointment_request
-        ? insertAppointmentRequest({
-            clinicId,
-            patientId: patient.id,
+      output.enquiry_request
+        ? insertAdmissionEnquiry({
+            schoolId,
+            parentId: parent.id,
             conversationId: conversation.id,
-            mobile: patient.wa_phone,
-            payload: output.appointment_request,
+            mobile: parent.wa_phone,
+            payload: output.enquiry_request,
           })
         : Promise.resolve(),
     ]);

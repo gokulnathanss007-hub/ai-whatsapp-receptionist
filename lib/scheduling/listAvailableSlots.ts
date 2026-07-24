@@ -1,7 +1,7 @@
 import { DateTime } from "luxon";
 import { google } from "googleapis";
 import { getValidGoogleClient } from "@/lib/google/tokenManager";
-import { getBookedSlotWindows, getClinic, getClinicGoogleAccount } from "@/lib/supabase/queries";
+import { getBookedSlotWindows, getSchool, getSchoolGoogleAccount } from "@/lib/supabase/queries";
 import { resolveRequestedDateTime } from "@/lib/scheduling/requestedDateTime";
 import { filterOutBusy, generateCandidateSlots } from "@/lib/scheduling/slotGenerator";
 import type { SchedulingSlot } from "@/lib/scheduling/types";
@@ -10,28 +10,28 @@ const DEFAULT_LOOKAHEAD_DAYS = 3;
 const MAX_OFFERED_SLOTS = 5;
 
 /**
- * Real, calendar-checked available slots for a clinic: working hours minus
+ * Real, calendar-checked available slots for a school: working hours minus
  * (a) whatever Google Calendar reports as busy, and (b) whatever Postgres
- * already has booked for this clinic. (b) matters because Postgres commits
+ * already has booked for this school. (b) matters because Postgres commits
  * a booking instantly while the matching Calendar event is created in a
  * separate follow-up call — without this check, a slot that was just booked
  * a moment ago could still show up as "available" here until Calendar sync
- * catches up. Returns null if the clinic has no connected (or currently
+ * catches up. Returns null if the school has no connected (or currently
  * working) Google Calendar — callers should treat that as "fall back to the
  * legacy flow," not as an error.
  *
- * `requestHint` is raw text (typically the patient's current message, or
+ * `requestHint` is raw text (typically the parent's current message, or
  * their previously-collected preferred_date/preferred_time) that may state
  * a specific date/time. When it resolves to a real target, this function
  * NEVER falls back to "just the earliest slots" — production bug: a
- * patient asking for "tomorrow 5pm" was shown (and sometimes booked into)
+ * parent asking for "tomorrow 5pm" was shown (and sometimes booked into)
  * today's earliest slots instead, because the old version of this function
  * always returned the chronologically-earliest N candidates with zero
  * awareness of what was actually requested. See
  * /docs/GOOGLE_CALENDAR_INTEGRATION.md §6/§7.
  */
 export async function listAvailableSlots(params: {
-  clinicId: string;
+  schoolId: string;
   daysAhead?: number;
   requestHint?: string;
   /**
@@ -45,7 +45,7 @@ export async function listAvailableSlots(params: {
    */
   exactStartUtcIso?: string;
   /**
-   * Clinic-local calendar day (ISO date, e.g. "2026-07-19") to restrict
+   * School-local calendar day (ISO date, e.g. "2026-07-19") to restrict
    * results to — the day-picker flow (PATIENT_EXPERIENCE.md §5: day first,
    * then time). Takes precedence over requestHint parsing.
    */
@@ -53,19 +53,19 @@ export async function listAvailableSlots(params: {
   /** Max slots returned in the generic (no-target) path. Defaults to MAX_OFFERED_SLOTS; the day-grouping engine passes a large value to see the whole window. */
   limit?: number;
 }): Promise<SchedulingSlot[] | null> {
-  const account = await getClinicGoogleAccount(params.clinicId);
+  const account = await getSchoolGoogleAccount(params.schoolId);
   if (!account || account.sync_status !== "connected") return null;
 
-  const clinic = await getClinic(params.clinicId);
-  if (!clinic || Object.keys(clinic.opening_hours).length === 0) {
+  const school = await getSchool(params.schoolId);
+  if (!school || Object.keys(school.opening_hours).length === 0) {
     // No structured hours configured yet — treat exactly like "no working
     // Google connection" (fall back to the legacy flow) rather than silently
     // generating zero slots forever, which would look like a permanently
-    // fully-booked clinic instead of a missing setup step.
+    // fully-booked school instead of a missing setup step.
     return null;
   }
 
-  const client = await getValidGoogleClient(params.clinicId);
+  const client = await getValidGoogleClient(params.schoolId);
   if (!client) return null;
 
   const now = new Date();
@@ -76,10 +76,10 @@ export async function listAvailableSlots(params: {
     if (!exact.isValid) return [];
     target = exact;
   } else if (params.dayKey) {
-    dayKeyDate = DateTime.fromISO(params.dayKey, { zone: clinic.timezone });
+    dayKeyDate = DateTime.fromISO(params.dayKey, { zone: school.timezone });
     if (!dayKeyDate.isValid) return [];
   } else if (params.requestHint) {
-    target = resolveRequestedDateTime({ text: params.requestHint, timezone: clinic.timezone, now });
+    target = resolveRequestedDateTime({ text: params.requestHint, timezone: school.timezone, now });
   }
 
   let daysAhead = params.daysAhead ?? DEFAULT_LOOKAHEAD_DAYS;
@@ -110,9 +110,9 @@ export async function listAvailableSlots(params: {
   const busy = freebusy.data.calendars?.[account.calendar_id]?.busy ?? [];
 
   const candidates = generateCandidateSlots({
-    workingHours: clinic.opening_hours,
-    slotDurationMinutes: clinic.slot_duration_minutes,
-    timezone: clinic.timezone,
+    workingHours: school.opening_hours,
+    slotDurationMinutes: school.slot_duration_minutes,
+    timezone: school.timezone,
     fromDate: now,
     daysAhead,
   });
@@ -127,13 +127,13 @@ export async function listAvailableSlots(params: {
   const available = filterOutBusy(candidates, busyIntervals);
 
   if (dayKeyDate) {
-    // Day-picker flow: every free slot on the chosen clinic-local day, capped
+    // Day-picker flow: every free slot on the chosen school-local day, capped
     // at the Meta list-row limit (10). If a busy day has more, the earliest
     // 10 are shown — typing a later time still works, every tap has a typed
     // equivalent (PATIENT_EXPERIENCE.md §6.2).
     const dayKey = dayKeyDate.toISODate();
     return available
-      .filter((slot) => DateTime.fromISO(slot.startsAt).setZone(clinic.timezone).toISODate() === dayKey)
+      .filter((slot) => DateTime.fromISO(slot.startsAt).setZone(school.timezone).toISODate() === dayKey)
       .slice(0, 10);
   }
 

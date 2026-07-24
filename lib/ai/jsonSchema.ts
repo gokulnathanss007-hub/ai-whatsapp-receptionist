@@ -2,9 +2,10 @@ import { HANDOFF_REASONS, INTENTS } from "@/lib/types";
 
 // Hand-written JSON Schema for OpenAI Structured Outputs, mirroring
 // aiOutputSchema in /lib/types.ts and the OUTPUT FORMAT contract in
-// /docs/SYSTEM_PROMPT.md. Structured Outputs strict mode requires every
-// property to be listed in "required" and forbids extra properties, so
-// optional fields are modelled as nullable rather than omitted.
+// /docs/03-engineering/SYSTEM_PROMPT.md. Structured Outputs strict mode
+// requires every property to be listed in "required" and forbids extra
+// properties, so optional fields are modelled as nullable rather than
+// omitted.
 //
 // Nullable fields use `anyOf: [<type>, {type:"null"}]` rather than OpenAI's
 // documented `"type": ["string", "null"]` array shorthand — verified against
@@ -19,49 +20,45 @@ const collectedSlotsJsonSchema = {
   additionalProperties: false,
   properties: {
     name: nullableString,
+    child_name: nullableString,
     age: nullableString,
     gender: nullableString,
-    duration: nullableString,
-    previous_treatment: nullableString,
-    current_medications: nullableString,
-    affected_area: nullableString,
+    grade_applying_for: nullableString,
+    previous_school: nullableString,
     preferred_time: nullableString,
     preferred_date: nullableString,
-    preferred_doctor: nullableString,
     reason: nullableString,
-    concern: nullableString,
+    enquiry_details: nullableString,
   },
   required: [
     "name",
+    "child_name",
     "age",
     "gender",
-    "duration",
-    "previous_treatment",
-    "current_medications",
-    "affected_area",
+    "grade_applying_for",
+    "previous_school",
     "preferred_time",
     "preferred_date",
-    "preferred_doctor",
     "reason",
-    "concern",
+    "enquiry_details",
   ],
 } as const;
 
-const appointmentRequestJsonSchema = {
+const enquiryRequestJsonSchema = {
   anyOf: [
     {
       type: "object",
       additionalProperties: false,
       properties: {
         name: { type: "string" },
-        preferred_doctor: nullableString,
+        grade_applying_for: nullableString,
         preferred_date: { type: "string" },
         preferred_time: { type: "string" },
         reason: { type: "string" },
       },
       required: [
         "name",
-        "preferred_doctor",
+        "grade_applying_for",
         "preferred_date",
         "preferred_time",
         "reason",
@@ -88,7 +85,7 @@ const bookingSelectionJsonSchema = {
 } as const;
 
 export const AI_OUTPUT_JSON_SCHEMA = {
-  name: "medixum_receptionist_reply",
+  name: "school_receptionist_reply",
   strict: true,
   schema: {
     type: "object",
@@ -97,7 +94,7 @@ export const AI_OUTPUT_JSON_SCHEMA = {
       reply: { type: "string" },
       intent: { type: "string", enum: [...INTENTS] },
       collected: collectedSlotsJsonSchema,
-      appointment_request: appointmentRequestJsonSchema,
+      enquiry_request: enquiryRequestJsonSchema,
       booking_selection: bookingSelectionJsonSchema,
       presenting_slots: { type: "boolean" },
       human_handoff: { type: "boolean" },
@@ -109,7 +106,7 @@ export const AI_OUTPUT_JSON_SCHEMA = {
       "reply",
       "intent",
       "collected",
-      "appointment_request",
+      "enquiry_request",
       "booking_selection",
       "presenting_slots",
       "human_handoff",

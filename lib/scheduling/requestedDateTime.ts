@@ -27,10 +27,10 @@ const WEEKDAY_TO_LUXON: Record<string, number> = {
  * exact-match check, since it drives which single slot gets treated as
  * authoritative.
  *
- * Weekday names resolve to their NEXT occurrence in the clinic's timezone
+ * Weekday names resolve to their NEXT occurrence in the school's timezone
  * ("Monday 5 PM" asked on a Thursday → the coming Monday, never today). If
  * today IS the named weekday, it means today while the time is still ahead,
- * and rolls to next week once it has passed — same as a receptionist would
+ * and rolls to next week once it has passed — same as a school office would
  * read it. "next <weekday>" always skips past today.
  *
  * P0 incident this weekday support closes: "Book me on Monday at 5 PM"
@@ -38,13 +38,13 @@ const WEEKDAY_TO_LUXON: Record<string, number> = {
  * earliest-slots flow (today's grid slots near the current time), the model
  * picked from that wrong list, and the time-of-day-only mismatch guard in
  * trigger/replyPipeline.ts could approve a same-time-WRONG-DAY slot. The
- * patient ended up booked today for an appointment they asked for on
+ * parent ended up booked today for a visit they asked for on
  * Monday. With a real target resolved here, the exact-match path and the
  * full day+time mismatch guard both engage instead.
  *
  * Root cause this file exists to fix: lib/scheduling/listAvailableSlots.ts
  * used to always return the chronologically-earliest slots with zero
- * awareness of what the patient actually asked for — see
+ * awareness of what the parent actually asked for — see
  * /docs/GOOGLE_CALENDAR_INTEGRATION.md §6/§7 for the incident this covers.
  */
 export function resolveRequestedDateTime(params: {
@@ -90,7 +90,7 @@ export function resolveRequestedDateTime(params: {
     // guard handle it conservatively.
     return null;
   } else {
-    // No day mentioned at all — default to today, same as a walk-in patient
+    // No day mentioned at all — default to today, same as a walk-in parent
     // asking "is 5pm free?" would mean.
     targetDay = base;
   }
@@ -98,7 +98,7 @@ export function resolveRequestedDateTime(params: {
   return targetDay.set({ hour, minute, second: 0, millisecond: 0 });
 }
 
-/** Formats a resolved target for patient-facing text, e.g. "Tomorrow at 5:00 PM". */
+/** Formats a resolved target for parent-facing text, e.g. "Tomorrow at 5:00 PM". */
 export function formatRequestedLabel(target: DateTime, timezone: string, now: Date): string {
   const nowInZone = DateTime.fromJSDate(now, { zone: timezone });
   const dayLabel = target.hasSame(nowInZone, "day")

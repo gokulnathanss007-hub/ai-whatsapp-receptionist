@@ -22,9 +22,9 @@ export function extractTimeMentions(text: string): string[] {
 }
 
 /**
- * True if the slot's own time-of-day appears among the patient's stated
+ * True if the slot's own time-of-day appears among the parent's stated
  * mentions. Used as a last-line sanity check before committing a booking:
- * in production, the model has resolved a patient's clearly-stated time
+ * in production, the model has resolved a parent's clearly-stated time
  * (e.g. "1:00pm") to the WRONG id from a valid <available_slots> list (e.g.
  * "11:00 AM"'s id) — despite the correct slot being available. This catches
  * that specific mismatch before the booking is made, not after.

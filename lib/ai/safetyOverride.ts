@@ -1,21 +1,22 @@
 import type { AiOutput, HandoffReason } from "@/lib/types";
 
 // Independent, deterministic backstop for the model's own handoff judgement —
-// see /docs/AI_RECEPTIONIST_SPEC.md §12 "Fail Closed" and
-// /docs/PROJECT_ARCHITECTURE.md §5 step 5. Never rely on the model alone for
-// safety-critical routing (CLAUDE.md §5.3). Keyword lists are a best-effort
-// net, not exhaustive NLU — they only ever add a handoff, never remove one.
+// see /docs/03-engineering/AI_RECEPTIONIST_SPEC.md §12 "Fail Closed" and
+// /docs/03-engineering/PROJECT_ARCHITECTURE.md §5 step 5. Never rely on the
+// model alone for safety-critical routing (CLAUDE.md §5.3). Keyword lists are
+// a best-effort net, not exhaustive NLU — they only ever add a handoff, never
+// remove one.
 
 const SAFETY_PATTERNS: Array<{ reason: HandoffReason; pattern: RegExp }> = [
   {
-    reason: "emergency",
+    reason: "urgent_safety_concern",
     pattern:
-      /\b(emergency|severe pain|can'?t breathe|bleeding heavily|allergic reaction|anaphyla|swelling (badly|a lot)|face is swelling|passed out|unconscious)\b/i,
+      /\b(emergency|severe pain|can'?t breathe|bleeding heavily|allergic reaction|anaphyla|passed out|unconscious|child is missing|can'?t find my child)\b/i,
   },
   {
-    reason: "medical_advice",
+    reason: "sensitive_matter",
     pattern:
-      /\b(what medicine|which medicine|is this cancer|is this serious|diagnos|prescri|what'?s wrong with my (skin|hair|face)|dosage|is it dangerous)\b/i,
+      /\b(custody|bullying|being bullied|harass|abuse|expelled|suspension|suspended|legal guardian|restraining order|court order)\b/i,
   },
   {
     reason: "complaint",
@@ -31,8 +32,9 @@ const SAFETY_PATTERNS: Array<{ reason: HandoffReason; pattern: RegExp }> = [
   },
 ];
 
-// Matches SAFETY_PATTERNS order, which follows /docs/INTENTS.md precedence:
-// emergency > medical_advice > complaint > billing_issue > refund.
+// Matches SAFETY_PATTERNS order, which follows /docs/02-product/INTENTS.md
+// precedence: urgent_safety_concern > sensitive_matter > complaint >
+// billing_issue > refund.
 
 export function detectSafetyOverride(userMessage: string): HandoffReason | null {
   for (const { reason, pattern } of SAFETY_PATTERNS) {

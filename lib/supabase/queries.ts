@@ -1,18 +1,19 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type {
-  AppointmentRequestRow,
+  AdmissionEnquiryRow,
   AppointmentRow,
-  ClinicDoctorRow,
-  ClinicFaqRow,
-  ClinicGoogleAccountRow,
-  ClinicRow,
-  ClinicServiceRow,
+  SchoolAssetRow,
+  SchoolStaffRow,
+  SchoolFaqRow,
+  SchoolGoogleAccountRow,
+  SchoolRow,
+  SchoolServiceRow,
   ConversationRow,
   MessageRow,
-  PatientRow,
+  ParentRow,
 } from "@/lib/supabase/types";
 import type {
-  AppointmentRequestPayload,
+  AdmissionEnquiryPayload,
   BookingStatus,
   CollectedSlots,
   ConversationStage,
@@ -41,104 +42,116 @@ export async function markEventProcessed(waMessageId: string): Promise<void> {
   if (error && error.code !== "23505") throw error;
 }
 
-// ── Clinic resolution & knowledge ───────────────────────────────────────────
+// ── School resolution & knowledge ───────────────────────────────────────────
 
-export async function resolveClinicIdByPhoneNumberId(
+export async function resolveSchoolIdByPhoneNumberId(
   phoneNumberId: string,
 ): Promise<string | null> {
   const { data, error } = await getSupabaseClient()
-    .from("clinic_whatsapp_numbers")
-    .select("clinic_id")
+    .from("school_whatsapp_numbers")
+    .select("school_id")
     .eq("phone_number_id", phoneNumberId)
     .maybeSingle();
   if (error) throw error;
-  return data?.clinic_id ?? null;
+  return data?.school_id ?? null;
 }
 
-export async function getClinic(clinicId: string): Promise<ClinicRow | null> {
+export async function getSchool(schoolId: string): Promise<SchoolRow | null> {
   const { data, error } = await getSupabaseClient()
-    .from("clinics")
+    .from("schools")
     .select("*")
-    .eq("id", clinicId)
+    .eq("id", schoolId)
     .maybeSingle();
   if (error) throw error;
-  return data as ClinicRow | null;
+  return data as SchoolRow | null;
 }
 
-export async function getClinicDoctors(clinicId: string): Promise<ClinicDoctorRow[]> {
+export async function getSchoolStaff(schoolId: string): Promise<SchoolStaffRow[]> {
   const { data, error } = await getSupabaseClient()
-    .from("clinic_doctors")
+    .from("school_staff")
     .select("*")
-    .eq("clinic_id", clinicId)
+    .eq("school_id", schoolId)
     .eq("is_active", true);
   if (error) throw error;
-  return (data ?? []) as ClinicDoctorRow[];
+  return (data ?? []) as SchoolStaffRow[];
 }
 
-export async function getClinicServices(clinicId: string): Promise<ClinicServiceRow[]> {
+export async function getSchoolServices(schoolId: string): Promise<SchoolServiceRow[]> {
   const { data, error } = await getSupabaseClient()
-    .from("clinic_services")
+    .from("school_services")
     .select("*")
-    .eq("clinic_id", clinicId)
+    .eq("school_id", schoolId)
     .eq("is_active", true);
   if (error) throw error;
-  return (data ?? []) as ClinicServiceRow[];
+  return (data ?? []) as SchoolServiceRow[];
 }
 
-export async function getClinicFaqs(clinicId: string): Promise<ClinicFaqRow[]> {
+export async function getSchoolFaqs(schoolId: string): Promise<SchoolFaqRow[]> {
   const { data, error } = await getSupabaseClient()
-    .from("clinic_faqs")
+    .from("school_faqs")
     .select("*")
-    .eq("clinic_id", clinicId);
+    .eq("school_id", schoolId);
   if (error) throw error;
-  return (data ?? []) as ClinicFaqRow[];
+  return (data ?? []) as SchoolFaqRow[];
 }
 
-// ── Patients & conversations ─────────────────────────────────────────────────
+/** Looks up a configured file for this school (e.g. a transport routes PDF) — see 0014_school_assets.sql. Null when not configured yet. */
+export async function getSchoolAsset(schoolId: string, assetKey: string): Promise<SchoolAssetRow | null> {
+  const { data, error } = await getSupabaseClient()
+    .from("school_assets")
+    .select("*")
+    .eq("school_id", schoolId)
+    .eq("asset_key", assetKey)
+    .maybeSingle();
+  if (error) throw error;
+  return data as SchoolAssetRow | null;
+}
 
-export async function getOrCreatePatient(
-  clinicId: string,
+// ── Parents & conversations ─────────────────────────────────────────────────
+
+export async function getOrCreateParent(
+  schoolId: string,
   waPhone: string,
-): Promise<PatientRow> {
+): Promise<ParentRow> {
   const client = getSupabaseClient();
   const existing = await client
-    .from("patients")
+    .from("parents")
     .select("*")
-    .eq("clinic_id", clinicId)
+    .eq("school_id", schoolId)
     .eq("wa_phone", waPhone)
     .maybeSingle();
   if (existing.error) throw existing.error;
   if (existing.data) {
     const { data, error } = await client
-      .from("patients")
+      .from("parents")
       .update({ last_seen_at: new Date().toISOString() })
       .eq("id", existing.data.id)
       .select("*")
       .single();
     if (error) throw error;
-    return data as PatientRow;
+    return data as ParentRow;
   }
 
   const { data, error } = await client
-    .from("patients")
-    .insert({ clinic_id: clinicId, wa_phone: waPhone })
+    .from("parents")
+    .insert({ school_id: schoolId, wa_phone: waPhone })
     .select("*")
     .single();
   if (error) throw error;
-  return data as PatientRow;
+  return data as ParentRow;
 }
 
-/** Finds the patient's most recent open conversation, or starts a new one. */
+/** Finds the parent's most recent open conversation, or starts a new one. */
 export async function getOrCreateOpenConversation(
-  clinicId: string,
-  patientId: string,
+  schoolId: string,
+  parentId: string,
 ): Promise<ConversationRow> {
   const client = getSupabaseClient();
   const existing = await client
     .from("conversations")
     .select("*")
-    .eq("clinic_id", clinicId)
-    .eq("patient_id", patientId)
+    .eq("school_id", schoolId)
+    .eq("parent_id", parentId)
     .neq("stage", "closed")
     .order("last_message_at", { ascending: false })
     .limit(1)
@@ -148,7 +161,7 @@ export async function getOrCreateOpenConversation(
 
   const { data, error } = await client
     .from("conversations")
-    .insert({ clinic_id: clinicId, patient_id: patientId })
+    .insert({ school_id: schoolId, parent_id: parentId })
     .select("*")
     .single();
   if (error) throw error;
@@ -199,7 +212,7 @@ export async function updateConversationAfterTurn(params: {
   handoffReason: HandoffReason | null;
   /** Omit to leave booking_status untouched — most turns (FAQ, qualifying, etc.) aren't booking-related. */
   bookingStatus?: BookingStatus;
-  /** Semantic screen last shown this turn (PATIENT_EXPERIENCE.md §2). Omit to leave unchanged. */
+  /** Semantic screen last shown this turn (docs/03-engineering/PATIENT_EXPERIENCE.md §2). Omit to leave unchanged. */
   currentScreen?: string;
 }): Promise<void> {
   const { error } = await getSupabaseClient()
@@ -223,7 +236,7 @@ export async function updateConversationAfterTurn(params: {
  * Atomically claims the right to attempt a booking for this conversation —
  * backed by the claim_booking_attempt() Postgres function (see
  * 0007_claim_booking_attempt.sql) so two near-simultaneous inbound messages
- * (e.g. a patient double-tapping "Confirm") can never both proceed to call
+ * (e.g. a parent double-tapping "Confirm") can never both proceed to call
  * Google Calendar. Returns false if another attempt already holds the claim
  * (in flight or already confirmed) — callers must NOT attempt the booking in
  * that case, and must not touch booking_status further (the run that holds
@@ -254,7 +267,7 @@ export async function markBookingTimeout(conversationId: string): Promise<void> 
 /**
  * Sweeps every conversation still stuck at booking_in_progress older than
  * `staleBeforeIso` into a terminal timeout state. Backstop for the case the
- * reactive check in replyPipeline.ts can't cover: if the patient never sends
+ * reactive check in replyPipeline.ts can't cover: if the parent never sends
  * another message after a run crashes mid-booking, nothing would otherwise
  * ever move that conversation out of booking_in_progress. Called from the
  * scheduled trigger/bookingTimeoutSweep.ts task. Returns the ids that were
@@ -274,23 +287,23 @@ export async function markStaleBookingsTimedOut(staleBeforeIso: string): Promise
   return (data ?? []).map((row) => row.id as string);
 }
 
-export async function insertAppointmentRequest(params: {
-  clinicId: string;
-  patientId: string;
+export async function insertAdmissionEnquiry(params: {
+  schoolId: string;
+  parentId: string;
   conversationId: string;
-  /** Always the patient's real WhatsApp number (patients.wa_phone) — never asked for, never taken from the model. */
+  /** Always the parent's real WhatsApp number (parents.wa_phone) — never asked for, never taken from the model. */
   mobile: string;
-  payload: AppointmentRequestPayload;
-}): Promise<AppointmentRequestRow> {
+  payload: AdmissionEnquiryPayload;
+}): Promise<AdmissionEnquiryRow> {
   const { data, error } = await getSupabaseClient()
-    .from("appointment_requests")
+    .from("admission_enquiries")
     .insert({
-      clinic_id: params.clinicId,
-      patient_id: params.patientId,
+      school_id: params.schoolId,
+      parent_id: params.parentId,
       conversation_id: params.conversationId,
       name: params.payload.name,
       mobile: params.mobile,
-      preferred_doctor: params.payload.preferred_doctor ?? null,
+      grade_applying_for: params.payload.grade_applying_for ?? null,
       preferred_date: params.payload.preferred_date,
       preferred_time: params.payload.preferred_time,
       reason: params.payload.reason,
@@ -298,26 +311,64 @@ export async function insertAppointmentRequest(params: {
     .select("*")
     .single();
   if (error) throw error;
-  return data as AppointmentRequestRow;
+  return data as AdmissionEnquiryRow;
+}
+
+/**
+ * Records an enquiry from the deterministic "Talk to Admission Office" step
+ * (lib/decision-engine/admissionMenu.ts) — a separate, simpler insert path
+ * from insertAdmissionEnquiry() above, which backs the AI-driven visit-
+ * booking flow and requires preferred_date/preferred_time. This step never
+ * collects a date/time (no calendar booking involved, just an office
+ * hand-off), so those columns are left null rather than forced into the
+ * stricter AdmissionEnquiryPayload contract.
+ */
+export async function insertAdmissionOfficeEnquiry(params: {
+  schoolId: string;
+  parentId: string;
+  conversationId: string;
+  name: string;
+  childName: string;
+  gradeApplyingFor: string | null;
+  /** Always the parent's real WhatsApp number (parents.wa_phone) — never asked for, never taken from the model. */
+  mobile: string;
+  message: string | null;
+}): Promise<AdmissionEnquiryRow> {
+  const { data, error } = await getSupabaseClient()
+    .from("admission_enquiries")
+    .insert({
+      school_id: params.schoolId,
+      parent_id: params.parentId,
+      conversation_id: params.conversationId,
+      name: params.name,
+      child_name: params.childName,
+      mobile: params.mobile,
+      grade_applying_for: params.gradeApplyingFor,
+      reason: params.message,
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as AdmissionEnquiryRow;
 }
 
 // ── Google Calendar accounts ────────────────────────────────────────────────
 
-export async function getClinicGoogleAccount(
-  clinicId: string,
-): Promise<ClinicGoogleAccountRow | null> {
+export async function getSchoolGoogleAccount(
+  schoolId: string,
+): Promise<SchoolGoogleAccountRow | null> {
   const { data, error } = await getSupabaseClient()
-    .from("clinic_google_accounts")
+    .from("school_google_accounts")
     .select("*")
-    .eq("clinic_id", clinicId)
+    .eq("school_id", schoolId)
     .maybeSingle();
   if (error) throw error;
-  return data as ClinicGoogleAccountRow | null;
+  return data as SchoolGoogleAccountRow | null;
 }
 
-/** Inserts or replaces the stored Google connection for a clinic (one row per clinic_id). */
-export async function upsertClinicGoogleAccount(params: {
-  clinicId: string;
+/** Inserts or replaces the stored Google connection for a school (one row per school_id). */
+export async function upsertSchoolGoogleAccount(params: {
+  schoolId: string;
   googleEmail: string;
   calendarId: string;
   /** Already AES-256-GCM encrypted — see lib/google/tokenCrypto.ts. */
@@ -326,12 +377,12 @@ export async function upsertClinicGoogleAccount(params: {
   encryptedRefreshToken: string;
   tokenExpiry: string;
   scope: string;
-}): Promise<ClinicGoogleAccountRow> {
+}): Promise<SchoolGoogleAccountRow> {
   const { data, error } = await getSupabaseClient()
-    .from("clinic_google_accounts")
+    .from("school_google_accounts")
     .upsert(
       {
-        clinic_id: params.clinicId,
+        school_id: params.schoolId,
         google_email: params.googleEmail,
         calendar_id: params.calendarId,
         access_token: params.encryptedAccessToken,
@@ -342,23 +393,23 @@ export async function upsertClinicGoogleAccount(params: {
         last_sync_error: null,
         updated_at: new Date().toISOString(),
       },
-      { onConflict: "clinic_id" },
+      { onConflict: "school_id" },
     )
     .select("*")
     .single();
   if (error) throw error;
-  return data as ClinicGoogleAccountRow;
+  return data as SchoolGoogleAccountRow;
 }
 
 /** Persists a rotated access token (and refresh token, if Google issued a new one). */
-export async function updateClinicGoogleAccountTokens(params: {
-  clinicId: string;
+export async function updateSchoolGoogleAccountTokens(params: {
+  schoolId: string;
   encryptedAccessToken: string;
   encryptedRefreshToken?: string;
   tokenExpiry: string;
 }): Promise<void> {
   const { error } = await getSupabaseClient()
-    .from("clinic_google_accounts")
+    .from("school_google_accounts")
     .update({
       access_token: params.encryptedAccessToken,
       ...(params.encryptedRefreshToken ? { refresh_token: params.encryptedRefreshToken } : {}),
@@ -367,23 +418,23 @@ export async function updateClinicGoogleAccountTokens(params: {
       last_sync_error: null,
       updated_at: new Date().toISOString(),
     })
-    .eq("clinic_id", params.clinicId);
+    .eq("school_id", params.schoolId);
   if (error) throw error;
 }
 
-/** Marks a clinic's Google connection as broken (e.g. refresh_token revoked). */
-export async function markClinicGoogleAccountError(
-  clinicId: string,
+/** Marks a school's Google connection as broken (e.g. refresh_token revoked). */
+export async function markSchoolGoogleAccountError(
+  schoolId: string,
   message: string,
 ): Promise<void> {
   const { error } = await getSupabaseClient()
-    .from("clinic_google_accounts")
+    .from("school_google_accounts")
     .update({
       sync_status: "error",
       last_sync_error: message,
       updated_at: new Date().toISOString(),
     })
-    .eq("clinic_id", clinicId);
+    .eq("school_id", schoolId);
   if (error) throw error;
 }
 
@@ -396,9 +447,9 @@ export async function markClinicGoogleAccountError(
  * silently swallow.
  */
 export async function insertAppointment(params: {
-  clinicId: string;
-  clinicGoogleAccountId: string;
-  patientId: string;
+  schoolId: string;
+  schoolGoogleAccountId: string;
+  parentId: string;
   conversationId: string;
   name: string;
   mobile: string;
@@ -412,9 +463,9 @@ export async function insertAppointment(params: {
   const { data, error } = await getSupabaseClient()
     .from("appointments")
     .insert({
-      clinic_id: params.clinicId,
-      clinic_google_account_id: params.clinicGoogleAccountId,
-      patient_id: params.patientId,
+      school_id: params.schoolId,
+      school_google_account_id: params.schoolGoogleAccountId,
+      parent_id: params.parentId,
       conversation_id: params.conversationId,
       name: params.name,
       mobile: params.mobile,
@@ -435,7 +486,7 @@ export async function insertAppointment(params: {
  * exact message already created a confirmed appointment, but before the
  * reply was sent, a Trigger.dev retry must recognize that and resend the
  * same confirmation — never report the (now correctly unavailable) slot as
- * a conflict to the patient who just booked it.
+ * a conflict to the parent who just booked it.
  */
 export async function getAppointmentByWaMessageId(waMessageId: string): Promise<AppointmentRow | null> {
   const { data, error } = await getSupabaseClient()
@@ -464,20 +515,20 @@ export async function markAppointmentSynced(
 }
 
 /**
- * Confirmed appointment windows for a clinic's connected calendar, in range —
+ * Confirmed appointment windows for a school's connected calendar, in range —
  * used as a belt-and-suspenders filter on top of Google Calendar freebusy,
  * since Postgres is instantly consistent but Calendar sync can briefly lag
  * (see lib/scheduling/listAvailableSlots.ts).
  */
 export async function getBookedSlotWindows(
-  clinicGoogleAccountId: string,
+  schoolGoogleAccountId: string,
   fromIso: string,
   toIso: string,
 ): Promise<Array<{ slot_start: string; slot_end: string }>> {
   const { data, error } = await getSupabaseClient()
     .from("appointments")
     .select("slot_start, slot_end")
-    .eq("clinic_google_account_id", clinicGoogleAccountId)
+    .eq("school_google_account_id", schoolGoogleAccountId)
     .eq("status", "confirmed")
     .gte("slot_start", fromIso)
     .lt("slot_start", toIso);

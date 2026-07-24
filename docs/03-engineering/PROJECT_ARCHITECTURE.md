@@ -2,11 +2,11 @@
 
 > Location: `docs/03-engineering/`. Constitution: `/CLAUDE.md` (§4–§5 summarise this
 > doc). Related: `GOOGLE_CALENDAR_INTEGRATION.md` (scheduling subsystem, incl.
-> `clinic_google_accounts` + `appointments` schema), `DECISION_ENGINE.md` (V2 action
+> `school_google_accounts` + `appointments` schema), `DECISION_ENGINE.md` (V2 action
 > architecture), `SECURITY.md` (expanded security posture — §7 below is the summary),
 > `../05-database/DATABASE_SCHEMA.md` (consolidated schema), `../04-api/API_REFERENCE.md`.
 
-End-to-end architecture for the WhatsApp-inbound receptionist (platform V1). Written for
+End-to-end architecture for the WhatsApp-inbound front office (platform V1). Written for
 the MVP; the "wider CGE" it anticipates is now the versioned platform in
 `../02-product/PRODUCT_ROADMAP.md` — §10 below maps the old terminology.
 
@@ -15,7 +15,7 @@ the MVP; the "wider CGE" it anticipates is now the versioned platform in
 ## 1. High-level diagram
 
 ```
-Patient
+Parent
   │  sends WhatsApp message
   ▼
 WhatsApp Business Platform (Meta Cloud API)
@@ -26,18 +26,18 @@ Next.js App Router — /api/webhooks/whatsapp  (Vercel)
   ▼
 Trigger.dev v4 task — reply pipeline (idempotent, keyed by message.id)
   │
-  ├─ resolve clinic (phone_number_id → clinic_id)
+  ├─ resolve school (phone_number_id → school_id)
   ├─ load conversation + state (Supabase)
-  ├─ load clinic knowledge (cached prefix)
+  ├─ load school knowledge (cached prefix)
   ├─ build messages (system prompt + knowledge + recent history + new turn)
   ├─ call GPT-5 nano  (automatic prompt caching on the static prefix)
-  ├─ parse JSON output (reply, intent, collected, appointment_request, human_handoff)
+  ├─ parse JSON output (reply, intent, collected, enquiry_request, human_handoff)
   ├─ apply safety overrides (fail closed → force handoff if needed)
-  ├─ persist: message, updated slots, appointment_request, handoff flag
+  ├─ persist: message, updated slots, enquiry_request, handoff flag
   └─ send reply via Meta Cloud API (free-form, inside 24h service window)
        │
        ▼
-     Patient receives reply
+     Parent receives reply
 ```
 
 ---
@@ -55,12 +55,12 @@ Trigger.dev v4 task — reply pipeline (idempotent, keyed by message.id)
 
 ### 2.2 Reply pipeline (Trigger.dev v4 task)
 - Idempotent, keyed by `message.id` — safe to retry.
-- Orchestrates clinic resolution, prompt build, model call, persistence, and send.
+- Orchestrates school resolution, prompt build, model call, persistence, and send.
 - On any error: send the handoff message and flag staff (fail closed), then rethrow for
   observability (the retry stays idempotent).
 
 ### 2.3 AI layer (`/lib/ai`)
-- **Prompt builder** — puts the static prefix + clinic knowledge first (so automatic
+- **Prompt builder** — puts the static prefix + school knowledge first (so automatic
   caching applies), then trimmed history + new message.
 - **OpenAI client** — calls `gpt-5-nano` (Chat Completions or Responses API) at low/minimal
   reasoning effort, with Structured Outputs (JSON schema) enforcing the reply contract.
@@ -69,40 +69,40 @@ Trigger.dev v4 task — reply pipeline (idempotent, keyed by message.id)
 ### 2.4 WhatsApp layer (`/lib/whatsapp`)
 - **Signature verify**, **send message** (free-form session message), typed payloads.
 - Replies are sent inside the 24-hour customer-service window, so **no template** is needed
-  (cost = GPT-5 nano tokens only). If a conversation goes cold (>24h) and the clinic wants to
+  (cost = GPT-5 nano tokens only). If a conversation goes cold (>24h) and the school wants to
   re-engage, that's an outbound/template concern — out of scope for this MVP.
 
 ### 2.5 Knowledge layer (`/lib/knowledge`)
-- Loads and renders the clinic knowledge block; keyed by `clinic_id` + `knowledge_version`
+- Loads and renders the school knowledge block; keyed by `school_id` + `knowledge_version`
   for caching. See `KNOWLEDGE_STRUCTURE.md`.
 
 ### 2.6 Data layer (`/lib/supabase`)
-- Typed Supabase client and queries for clinics, conversations, messages, appointment
-  requests, and idempotency.
+- Typed Supabase client and queries for schools, conversations, messages, admission
+  enquiries, and idempotency.
 
 ---
 
 ## 3. Data model (Supabase / Postgres)
 
-Reuses the existing `clinics` table; adds the conversation and request tables. (Knowledge
+Reuses the existing `schools` table; adds the conversation and request tables. (Knowledge
 tables are defined in `KNOWLEDGE_STRUCTURE.md`.)
 
 ```
-clinic_whatsapp_numbers
-  id, clinic_id (fk), phone_number_id, display_number
+school_whatsapp_numbers
+  id, school_id (fk), phone_number_id, display_number
 
-patients                       -- a.k.a. leads
+parents                        -- a.k.a. leads
   id (uuid, pk)
-  clinic_id (fk)
-  wa_phone                     -- patient WhatsApp number
+  school_id (fk)
+  wa_phone                     -- parent WhatsApp number
   name
   first_seen_at, last_seen_at
-  UNIQUE (clinic_id, wa_phone)
+  UNIQUE (school_id, wa_phone)
 
 conversations
   id (uuid, pk)
-  clinic_id (fk)
-  patient_id (fk)
+  school_id (fk)
+  parent_id (fk)
   stage                        -- greeting|qualifying|booking|faq|followup|handoff|closed
   collected_slots (jsonb)      -- accumulated details
   human_handoff (boolean)
@@ -120,13 +120,13 @@ messages
   created_at
   UNIQUE (wa_message_id)
 
-appointment_requests
+admission_enquiries
   id (uuid, pk)
-  clinic_id (fk)
-  patient_id (fk)
+  school_id (fk)
+  parent_id (fk)
   conversation_id (fk)
   name, mobile
-  preferred_doctor
+  grade_applying_for
   preferred_date, preferred_time
   reason
   status                       -- requested|confirmed|cancelled|rescheduled
@@ -140,16 +140,16 @@ processed_events               -- idempotency guard
 Notes:
 - `messages.wa_message_id` unique + `processed_events` give double idempotency.
 - `conversations.collected_slots` is the running state the pipeline updates each turn.
-- `appointment_requests.status` defaults to `requested`; staff move it forward.
+- `admission_enquiries.status` defaults to `requested`; staff move it forward.
 
 ---
 
 ## 4. Session & the 24-hour window
 
-- Inbound-first MVP means every reply is a response to a recent patient message → inside the
+- Inbound-first MVP means every reply is a response to a recent parent message → inside the
   24h customer-service window → **free-form messages allowed, no paid template.**
 - A `whatsapp_sessions`-style concept (aligned with existing CGE) can track window expiry per
-  patient if needed, but the MVP's reactive nature keeps this simple: if the patient just
+  parent if needed, but the MVP's reactive nature keeps this simple: if the parent just
   messaged, the window is open.
 
 ---
@@ -158,16 +158,17 @@ Notes:
 
 1. Trim history to the last N turns (cost + relevance).
 2. Build the message array:
-   - `system` = static prompt + clinic knowledge (**cached prefix**).
+   - `system` = static prompt + school knowledge (**cached prefix**).
    - conversation turns (user/assistant) as history.
    - new inbound message as the latest user turn.
 3. Call `gpt-5-nano` (low/minimal reasoning effort) with Structured Outputs / JSON-only
    output per the prompt contract.
 4. Parse. If parse fails or output is off-contract → **fail closed** (handoff).
-5. Apply deterministic safety overrides: independent detection of emergency / medical_advice
-   / complaint / billing / refund → force `human_handoff` even if the model didn't.
+5. Apply deterministic safety overrides: independent detection of urgent-safety /
+   sensitive-matter / complaint / billing / refund → force `human_handoff` even if the
+   model didn't.
 6. Persist message, merge `collected` into `conversations.collected_slots`, write
-   `appointment_request` if present, set handoff flag/reason.
+   `admission_enquiry` if present, set handoff flag/reason.
 7. Send `reply` via Meta.
 
 ---
@@ -185,15 +186,16 @@ Notes:
 
 - Verify every webhook via `X-Hub-Signature-256`.
 - Secrets in env only: `OPENAI_API_KEY`, Meta token & app secret, Supabase keys.
-- Store the minimum PII needed (name, WhatsApp number, appointment details).
-- Row-level isolation per `clinic_id`; a clinic can only ever see its own data.
-- No clinical data is generated or stored by the AI (it never diagnoses/prescribes).
+- Store the minimum PII needed (name, WhatsApp number, admission-enquiry details).
+- Row-level isolation per `school_id`; a school can only ever see its own data.
+- No admissions decision is generated or stored by the AI (it never promises admission
+  or a seat).
 
 ---
 
 ## 8. Observability
 
-- Log `wa_message_id`, resolved `clinic_id`, detected `intent`, and `handoff_reason`.
+- Log `wa_message_id`, resolved `school_id`, detected `intent`, and `handoff_reason`.
 - Metrics: first-response latency, AI-containment rate, enquiry→request conversion,
   handoff rate by reason.
 - Alert on: signature failures, model parse-failure rate, send failures.
@@ -205,7 +207,7 @@ Notes:
 - **Vercel** hosts the Next.js app and the webhook route.
 - **Trigger.dev v4** runs the reply pipeline.
 - **Supabase** is the database.
-- **Meta Cloud API** (direct) is the messaging channel; the clinic's number maps to the
+- **Meta Cloud API** (direct) is the messaging channel; the school's number maps to the
   shared webhook.
 - **OpenAI** provides the AI model (`gpt-5-nano`).
 - Required env: `OPENAI_API_KEY`, `META_WHATSAPP_TOKEN`, `META_APP_SECRET`,
@@ -215,8 +217,8 @@ Notes:
 
 ## 10. Relationship to the wider CGE
 
-This MVP is the **inbound WhatsApp receptionist**. The broader Clinic Growth Engine adds
-Exotel missed-call recovery, voice callbacks, and outbound templates. Those share the same
-`clinics` table and Supabase project, so this MVP is designed as a module of CGE, not a
+This MVP is the **inbound WhatsApp front office**. The broader CGE adds Exotel
+missed-call recovery, voice callbacks, and outbound templates. Those share the same
+`schools` table and Supabase project, so this MVP is designed as a module of CGE, not a
 separate product — the missed-call and voice layers can be added later without reworking
 this pipeline.

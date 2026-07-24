@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 // AES-256-GCM at-rest encryption for Google OAuth tokens stored in
-// clinic_google_accounts. GOOGLE_TOKEN_ENCRYPTION_KEY must be a base64-encoded
+// school_google_accounts. GOOGLE_TOKEN_ENCRYPTION_KEY must be a base64-encoded
 // 32-byte key (e.g. `openssl rand -base64 32`). Encrypted values are stored as
 // "<iv>:<authTag>:<ciphertext>" (each base64), safe for a text column.
 const ALGORITHM = "aes-256-gcm";

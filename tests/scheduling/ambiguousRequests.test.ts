@@ -14,7 +14,7 @@ function resolve(text: string) {
 // /docs/GOOGLE_CALENDAR_INTEGRATION.md "Supported date/time expressions"):
 // anything without BOTH an explicit clock time AND an am/pm marker must
 // resolve to null — never to a guessed instant. A null target means the
-// pipeline presents the real availability list and lets the patient pick,
+// pipeline presents the real availability list and lets the parent pick,
 // which is always safe; a wrong guessed target could drive a wrong booking.
 describe("ambiguous requests never resolve to a guessed time", () => {
   const vagueExpressions = [
@@ -33,7 +33,7 @@ describe("ambiguous requests never resolve to a guessed time", () => {
     });
   }
 
-  it("vague phrasings also produce no time-mentions, so the mismatch guard stays neutral (patient's explicit list pick decides)", () => {
+  it("vague phrasings also produce no time-mentions, so the mismatch guard stays neutral (parent's explicit list pick decides)", () => {
     for (const text of vagueExpressions) {
       expect(extractTimeMentions(text)).toEqual([]);
     }

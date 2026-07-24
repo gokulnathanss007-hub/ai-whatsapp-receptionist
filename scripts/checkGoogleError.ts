@@ -15,7 +15,7 @@ async function main() {
     ssl: { rejectUnauthorized: false },
   });
   await c.connect();
-  const r = await c.query("select sync_status, last_sync_error, token_expiry, updated_at from clinic_google_accounts");
+  const r = await c.query("select sync_status, last_sync_error, token_expiry, updated_at from school_google_accounts");
   console.log(JSON.stringify(r.rows, null, 2));
   await c.end();
 }

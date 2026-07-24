@@ -25,15 +25,16 @@ const MAX_ATTEMPTS = 3;
 /**
  * Calls gpt-5-nano at minimal reasoning effort with Structured Outputs
  * enforcing the reply contract (see /lib/ai/jsonSchema.ts and
- * /docs/SYSTEM_PROMPT.md "Model" note). Returns the raw JSON string —
- * callers must still run it through parseAiOutput before trusting it.
+ * /docs/03-engineering/SYSTEM_PROMPT.md "Model" note). Returns the raw JSON
+ * string — callers must still run it through parseAiOutput before trusting
+ * it.
  *
  * Retries transient failures (proxy 5xx, timeouts, empty responses) with a
  * short backoff before giving up. Production incident: a single one-off API
- * hiccup on an "I want to book appointment for Monday 10am" turn fell
- * straight through to the staff-handoff fallback — the same prompt then
- * succeeded 4/4 times when replayed. One flaky HTTP call must not eject a
- * patient from the booking flow.
+ * hiccup on an "I want to book a visit for Monday 10am" turn fell straight
+ * through to the staff-handoff fallback — the same prompt then succeeded 4/4
+ * times when replayed. One flaky HTTP call must not eject a parent from the
+ * booking flow.
  */
 export async function generateReceptionistReply(messages: ChatMessage[]): Promise<string> {
   const model = process.env.OPENAI_MODEL || "gpt-5-nano";

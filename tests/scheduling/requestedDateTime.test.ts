@@ -13,7 +13,7 @@ function resolve(text: string, now: Date) {
   return resolveRequestedDateTime({ text, timezone: TZ, now });
 }
 
-describe("resolveRequestedDateTime — P0 regression: patient's stated day+time must resolve exactly", () => {
+describe("resolveRequestedDateTime — P0 regression: parent's stated day+time must resolve exactly", () => {
   it("Case 1: 'Book Monday 5 PM' at Thursday 3:07 PM resolves to the coming Monday 5 PM — never today", () => {
     const target = resolve("Book me on Monday at 5:00 PM.", THURSDAY_1507);
     expect(target).not.toBeNull();

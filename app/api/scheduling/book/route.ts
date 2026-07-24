@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { isAdminRequestAuthorized } from "@/lib/google/adminAuth";
 import { getSchedulingProvider } from "@/lib/scheduling";
-import { getOrCreateOpenConversation, getOrCreatePatient } from "@/lib/supabase/queries";
+import { getOrCreateOpenConversation, getOrCreateParent } from "@/lib/supabase/queries";
 
 interface BookRequestBody {
-  clinic_id?: string;
+  school_id?: string;
   slot_id?: string;
   name?: string;
   mobile?: string;
@@ -13,7 +13,7 @@ interface BookRequestBody {
 
 // Phase 3 verification endpoint — exercises the exact booking path Phase 4
 // will later call from the WhatsApp reply pipeline, but driven manually so
-// it can be tested before any AI wiring exists. Reuses getOrCreatePatient /
+// it can be tested before any AI wiring exists. Reuses getOrCreateParent /
 // getOrCreateOpenConversation, the same functions the real pipeline uses.
 export async function POST(request: Request): Promise<Response> {
   const url = new URL(request.url);
@@ -22,19 +22,19 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const body = (await request.json().catch(() => null)) as BookRequestBody | null;
-  const clinicId = body?.clinic_id;
+  const schoolId = body?.school_id;
   const slotId = body?.slot_id;
   const name = body?.name;
   const mobile = body?.mobile;
   const reason = body?.reason;
 
-  if (!clinicId || !slotId || !name || !mobile || !reason) {
-    return new Response("Missing one of: clinic_id, slot_id, name, mobile, reason", {
+  if (!schoolId || !slotId || !name || !mobile || !reason) {
+    return new Response("Missing one of: school_id, slot_id, name, mobile, reason", {
       status: 400,
     });
   }
 
-  const provider = await getSchedulingProvider(clinicId);
+  const provider = await getSchedulingProvider(schoolId);
   if (!provider) {
     return Response.json(
       { ok: false, reason: "provider_unavailable", alternatives: [] },
@@ -42,12 +42,12 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const patient = await getOrCreatePatient(clinicId, mobile);
-  const conversation = await getOrCreateOpenConversation(clinicId, patient.id);
+  const parent = await getOrCreateParent(schoolId, mobile);
+  const conversation = await getOrCreateOpenConversation(schoolId, parent.id);
 
   const result = await provider.bookSlot({
     slotId,
-    patientId: patient.id,
+    parentId: parent.id,
     conversationId: conversation.id,
     name,
     mobile,

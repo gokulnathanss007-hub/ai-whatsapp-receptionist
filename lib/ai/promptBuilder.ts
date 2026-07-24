@@ -21,21 +21,19 @@ function loadStaticTemplate(): string {
 
 const COLLECTED_FIELD_LABELS: Record<keyof CollectedSlots, string> = {
   name: "Name",
-  age: "Age",
+  child_name: "Child's name",
+  age: "Child's age",
   gender: "Gender",
-  duration: "Duration of concern",
-  previous_treatment: "Previous treatment",
-  current_medications: "Current medications",
-  affected_area: "Affected area",
+  grade_applying_for: "Grade applying for",
+  previous_school: "Previous school",
   preferred_time: "Preferred time",
   preferred_date: "Preferred date",
-  preferred_doctor: "Preferred doctor",
-  reason: "Reason for visit",
-  concern: "Concern",
+  reason: "Reason for enquiry",
+  enquiry_details: "Enquiry details",
 };
 
 /**
- * Renders what's already been captured about this patient across the whole
+ * Renders what's already been captured about this parent across the whole
  * conversation so far — persisted in conversations.collected_slots. Injected
  * as its own block so the model never has to re-derive it from raw history
  * text, and so already-known facts survive even once the message history
@@ -51,29 +49,29 @@ export function renderCollectedInfoBlock(collected: CollectedSlots): string {
 
   return lines.length > 0
     ? lines.join("\n")
-    : "Nothing collected yet — this is a new patient in this conversation.";
+    : "Nothing collected yet — this is a new parent in this conversation.";
 }
 
 /**
- * Builds the system message: static behavioural template + clinic knowledge,
+ * Builds the system message: static behavioural template + school knowledge,
  * in that order, so the stable prefix stays first for OpenAI's automatic
- * prompt caching (see /docs/SYSTEM_PROMPT.md "Caching note"). <patient_info>
- * and the optional <available_slots> block both vary per-turn, so they're
- * appended after the cached prefix rather than folded into it.
+ * prompt caching (see /docs/03-engineering/SYSTEM_PROMPT.md "Caching note").
+ * <parent_info> and the optional <available_slots> block both vary per-turn,
+ * so they're appended after the cached prefix rather than folded into it.
  */
 export function buildSystemMessage(
-  clinicName: string,
+  schoolName: string,
   knowledgeBlock: string,
   collectedInfoBlock: string,
   availableSlotsBlock?: string,
 ): ChatMessage {
-  const staticBlock = loadStaticTemplate().replaceAll("{{CLINIC_NAME}}", clinicName);
+  const staticBlock = loadStaticTemplate().replaceAll("{{SCHOOL_NAME}}", schoolName);
   const slotsSection = availableSlotsBlock
     ? `\n\n<available_slots>\n${availableSlotsBlock}\n</available_slots>`
     : "";
   return {
     role: "system",
-    content: `<static>\n${staticBlock}\n</static>\n\n<clinic_knowledge>\n${knowledgeBlock}\n</clinic_knowledge>\n\n<patient_info>\n${collectedInfoBlock}\n</patient_info>${slotsSection}`,
+    content: `<static>\n${staticBlock}\n</static>\n\n<school_knowledge>\n${knowledgeBlock}\n</school_knowledge>\n\n<parent_info>\n${collectedInfoBlock}\n</parent_info>${slotsSection}`,
   };
 }
 
@@ -86,7 +84,7 @@ export function buildHistoryMessages(history: MessageRow[]): ChatMessage[] {
 }
 
 export function buildMessages(params: {
-  clinicName: string;
+  schoolName: string;
   knowledgeBlock: string;
   collectedInfoBlock: string;
   availableSlotsBlock?: string;
@@ -95,7 +93,7 @@ export function buildMessages(params: {
 }): ChatMessage[] {
   return [
     buildSystemMessage(
-      params.clinicName,
+      params.schoolName,
       params.knowledgeBlock,
       params.collectedInfoBlock,
       params.availableSlotsBlock,

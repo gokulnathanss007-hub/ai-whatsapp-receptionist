@@ -12,11 +12,11 @@ export type SelectedSlotResolution =
  * actually offered this turn.
  *
  * Production incident this fixes (2026-07-04, "Today 7.pm"): the parser
- * resolved the patient's time perfectly and the exact slot was free, but the
- * model echoed a corrupted slot id — so the booking failed and the patient
+ * resolved the parent's time perfectly and the exact slot was free, but the
+ * model echoed a corrupted slot id — so the booking failed and the parent
  * was told the time was "just taken" when it never was. The model's id echo
- * is the ONLY fragile link in the chain; the patient's own words are not.
- * When the id is unknown but the patient's stated time identifies EXACTLY
+ * is the ONLY fragile link in the chain; the parent's own words are not.
+ * When the id is unknown but the parent's stated time identifies EXACTLY
  * one offered slot, recover to that slot deterministically. Anything
  * ambiguous stays unresolved — the caller must re-present the list, never
  * guess (same "never substitute" rule as everywhere else in scheduling).
@@ -26,14 +26,14 @@ export function resolveSelectedSlot(params: {
   availableSlots: SchedulingSlot[];
   /** requestedTarget?.toUTC().toISO() — the parsed exact instant, when one resolved this turn. */
   requestedTargetUtcIso: string | null;
-  /** The patient's raw message this turn. */
+  /** The parent's raw message this turn. */
   messageText: string;
-  /** interactive.list_reply.id when the patient TAPPED a slot row (V2 interactive) — the strongest signal there is: Meta echoes back the exact id we sent, no model involved. */
+  /** interactive.list_reply.id when the parent TAPPED a slot row (V2 interactive) — the strongest signal there is: Meta echoes back the exact id we sent, no model involved. */
   tappedSlotId?: string | null;
 }): SelectedSlotResolution {
   const { selectedSlotId, availableSlots, requestedTargetUtcIso, messageText, tappedSlotId } = params;
 
-  // A tap outranks everything, including the model's echo — the patient
+  // A tap outranks everything, including the model's echo — the parent
   // physically selected this row and Meta returned its id verbatim.
   if (tappedSlotId) {
     const tapped = availableSlots.find((slot) => slot.id === tappedSlotId);
@@ -43,7 +43,7 @@ export function resolveSelectedSlot(params: {
   const matched = availableSlots.find((slot) => slot.id === selectedSlotId);
   if (matched) return { kind: "matched", slot: matched };
 
-  // Unknown id. Recover only on an unambiguous, patient-stated signal.
+  // Unknown id. Recover only on an unambiguous, parent-stated signal.
   if (requestedTargetUtcIso) {
     const byTarget = availableSlots.filter((slot) => slot.startsAt === requestedTargetUtcIso);
     if (byTarget.length === 1) return { kind: "recovered", slot: byTarget[0]! };

@@ -1,82 +1,95 @@
-# PRODUCT_REQUIREMENTS.md — Medixum AI WhatsApp Receptionist (V1 PRD)
+# PRODUCT_REQUIREMENTS.md — School Parent Enquiry AI WhatsApp Front Office (V1 PRD)
 
 > **Status: historical V1 PRD, preserved in full.** The living product document is
 > `PRODUCT.md`; version scope is `PRODUCT_ROADMAP.md`. This PRD remains the authoritative
-> record of the original MVP requirements and is unchanged below.
+> record of the original MVP requirements and is unchanged below (reworded to the
+> school domain the product now serves; see `../09-changelog/CHANGELOG.md` for the
+> clinic → school conversion record).
 
-**Product:** Medixum AI — AI WhatsApp Receptionist (Dermatology & Cosmetology MVP)
-**Owner:** Gokul (Medixum AI)
+**Product:** School Parent Enquiry AI — AI WhatsApp Parent Enquiry System (K-12 School MVP)
+**Owner:** Gokul (School Parent Enquiry AI)
 **Status:** V1 specification (shipped)
-**Vertical:** Dermatology & cosmetology clinics
+**Vertical:** K-12 school admissions
 
 ---
 
 ## 1. Problem
 
-Small dermatology and cosmetology clinics run on a busy front desk. Enquiries arrive on
-WhatsApp at all hours; staff are with patients, on calls, or off-shift. The result:
+Small private schools run on a busy front office. Enquiries arrive on WhatsApp at all
+hours, especially during admission season; staff are in class, on calls, or off-shift.
+The result:
 
-- Enquiries go unanswered for minutes to hours — the patient books elsewhere.
-- The receptionist re-answers the same questions (fees, timings, location) all day.
-- Genuine treatment enquiries (acne, hair fall, pigmentation) aren't captured or qualified.
+- Enquiries go unanswered for minutes to hours — the parent enquires elsewhere.
+- The front office re-answers the same questions (fees, timings, transport, location)
+  all day.
+- Genuine admission enquiries (which grade, transfer from where) aren't captured or
+  qualified.
 - No structured record of who asked what, so follow-up is ad hoc.
 
-For a clinic, an unanswered WhatsApp enquiry is a lost consultation and lost lifetime value.
+For a school, an unanswered WhatsApp enquiry is a lost admission and lost multi-year
+relationship.
 
 ## 2. Solution
 
-A WhatsApp AI receptionist that responds instantly in the voice of a premium, well-trained
-clinic front desk. It answers FAQs, qualifies treatment enquiries, captures appointment
-requests for staff to confirm, and hands off cleanly whenever a human is needed. It never
-diagnoses, prescribes, or behaves like a general AI assistant.
+A WhatsApp AI front office that responds instantly in the voice of a premium,
+well-trained school office. It answers FAQs, qualifies admission enquiries, captures
+admission enquiries for staff to confirm, and hands off cleanly whenever a human is
+needed. It never promises admission, gives legal/safeguarding advice, or behaves like a
+general AI assistant.
 
 ## 3. Goals
 
 **Primary goal**
-- Convert WhatsApp enquiries into booked consultation requests.
+- Convert WhatsApp enquiries into recorded admission enquiries / booked school visits.
 
 **Secondary goals**
 - Answer frequently asked questions without staff involvement.
-- Reduce receptionist workload.
-- Collect and structure patient information.
-- Guide patients through the enquiry journey.
+- Reduce front-office workload.
+- Collect and structure parent and child information.
+- Guide parents through the enquiry journey.
 - Escalate to human staff when required.
 
 **Non-goals (explicit)**
-- Not a medical adviser, symptom checker, or diagnostic tool.
+- Not an admissions decision-maker or seat-availability guarantor.
 - Not a general chatbot; no off-topic conversation.
-- Not an auto-confirming booking engine in the MVP (records requests only).
+- Not an auto-confirming booking engine in the MVP (records requests only, unless a
+  connected calendar allows real booking — see §9).
 
 ## 4. Target User
 
-**Buyer:** Owner or manager of a private dermatology/cosmetology clinic (often the
-dermatologist themselves, or a practice manager).
+**Buyer:** Owner/Principal/Correspondent of a private K-12 school (often the Principal
+themselves, or an admissions officer/school administrator).
 
 **End users of the chat:**
-- *New patient* — has a skin/hair concern, wants to know fees, treatments, availability.
-- *Returning / follow-up patient* — post-treatment questions, rebooking.
-- *Price/information shopper* — comparing clinics, needs fast, clear answers.
+- *New parent* — evaluating the school for their child, wants to know fees, grade
+  availability, transport, timings.
+- *Transfer parent* — moving their child from another school, needs the transfer
+  process and current-grade fit.
+- *Comparison shopper* — comparing schools, needs fast, clear answers.
 
-**Typical clinic services the AI must understand** (high level only — never clinical depth):
-acne, acne scars, pigmentation, melasma, hair fall, PRP, GFC, hair transplant, laser hair
-reduction, anti-aging, Botox, fillers, skin rejuvenation, chemical peel, HydraFacial, wart
-removal, mole removal, nail disorders, eczema, psoriasis, vitiligo, fungal infections.
+**Typical school programs/grades the AI must understand** (high level only — never an
+admissions-decision level of detail): kindergarten, primary school, middle school, high
+school, senior secondary, and any grade-specific streams (e.g. Science/Commerce) the
+school offers.
 
 ## 5. Functional Requirements
 
-The receptionist must be able to:
+The front office AI must be able to:
 
-1. Greet patients warmly and set clinic context.
-2. Answer consultation-fee questions (from clinic knowledge).
-3. Share clinic timings, location, and parking information.
-4. Explain available treatments at a **high level only**.
-5. Qualify leads by collecting the right details per enquiry type (see §7).
-6. Capture appointment **requests** (name, preferred doctor, date, time, reason). The mobile
-   number is never asked for — it is taken automatically from the patient's WhatsApp number.
-7. Handle new patients and follow-up/returning patients differently.
-8. Answer structured FAQs (fees, timings, parking, insurance, maps, doctors, treatments,
-   payment methods, follow-up policy, cancellation, rescheduling).
-9. Handle cancellation and rescheduling requests (captured for staff).
+1. Greet parents warmly and set school context.
+2. Answer fee-structure questions (from school knowledge — fees vary by grade, never a
+   single invented number).
+3. Share school timings, location, transport, and facilities information.
+4. Explain available programs/grades at a **high level only**.
+5. Qualify leads by collecting the right details per enquiry (see §7).
+6. Capture admission **enquiries** (parent name, child name, grade applying for,
+   preferred date, preferred time, reason). The mobile number is never asked for — it
+   is taken automatically from the parent's WhatsApp number.
+7. Handle new parents and transfer/returning parents differently.
+8. Answer structured FAQs (fees, timings, transport, holidays & events, facilities,
+   certificates, location, payment methods, follow-up policy).
+9. Handle cancellation and rescheduling requests for a school visit (captured for
+   staff).
 10. Escalate to a human on defined triggers (see §8).
 11. Operate in English, with the design allowing multilingual expansion later.
 
@@ -86,74 +99,79 @@ The receptionist must be able to:
 Never robotic, never salesy, never pushy.
 
 **Hard prohibitions — the AI must never:**
-- Diagnose diseases.
-- Prescribe medicines.
-- Promise or guarantee treatment results/outcomes.
-- Replace a dermatologist or give emergency advice.
+- Guarantee, promise, or imply that admission or a seat is confirmed.
+- Quote a fee, seat availability, or a cutoff/date not in school knowledge.
+- Promise or guarantee any result, timeline, or outcome.
+- Act as the Principal or Admissions Officer, or make an admissions decision itself.
+- Give legal, disciplinary, or custody advice, or attempt to resolve a child-safety or
+  family-sensitive matter itself.
 - Invent information.
-- Discuss politics, coding, math, history, or any topic outside the clinic.
+- Discuss politics, coding, math, history, or any topic outside the school.
 - Reveal it is an AI or behave like a general assistant.
 
-**When unsure:** "I'll connect you with our clinic staff."
+**When unsure:** "I'll connect you with our school office."
 
 ## 7. Lead Qualification Rules
 
-Instead of booking immediately, collect useful information first, then offer slots.
+Instead of booking immediately, collect useful information first, then offer a visit.
 
-- **Acne:** name, age, gender, duration, previous treatment, preferred consultation time,
-  preferred doctor (optional).
-- **Hair fall:** gender, age, duration, current medications, previous treatments, preferred
-  consultation time.
-- **Pigmentation:** affected area, duration, previous treatments, preferred consultation time.
-- **General appointment:** name, preferred doctor, preferred date, preferred time,
-  reason for visit. Mobile number is never asked for — it comes from the patient's WhatsApp
-  number automatically.
+- **Admission enquiry:** parent's name, child's name, age, gender, grade applying for,
+  previous school (if a transfer), preferred visit time.
+- **General visit request:** name, child's name, grade applying for, preferred date,
+  preferred time, reason for the visit. Mobile number is never asked for — it comes
+  from the parent's WhatsApp number automatically.
 
-Collection should feel conversational — one or two questions at a time, not a form dump.
+Collection should feel conversational — one question at a time, not a form dump.
 
 ## 8. Escalation / Human Handoff
 
 The AI hands off immediately when a message involves:
-- Medical advice or symptom interpretation
+- A sensitive or family-specific matter (custody, disciplinary issues, bullying, a
+  child-safety concern)
 - A complaint
 - A billing issue
 - A refund
-- An emergency
+- An urgent safety concern
 - A legal issue
-- Any question it cannot answer from clinic knowledge
+- Any question it cannot answer from school knowledge
 
-Handoff message pattern: *"I'll forward this to our clinic staff. They'll assist you
-shortly."* The conversation is flagged for staff; the AI does not attempt to resolve.
+Handoff message pattern: *"I will connect you with our school office team."* The
+conversation is flagged for staff; the AI does not attempt to resolve.
 
-## 9. Appointment Handling
+## 9. Admission Visit Handling
 
-The AI collects the appointment request and records it. It must **not** confirm an
-appointment unless the clinic's rules explicitly allow auto-confirmation. Default response:
+The AI collects the admission enquiry and records it. It must **not** confirm a school
+visit unless the school's rules explicitly allow auto-confirmation via a connected
+Google Calendar. Default response:
 
-> "Thank you. Your appointment request has been recorded. Our clinic will confirm your
-> appointment shortly."
+> "Perfect! I've recorded your enquiry. Our school office will confirm your visit
+> shortly."
 
 ## 10. Non-Functional Requirements
 
 - **Latency:** first reply within a few seconds of the inbound message.
 - **Reliability:** webhook acks fast; reply pipeline is idempotent and retry-safe.
-- **Multi-tenancy:** each clinic's data isolated; onboarding a clinic requires no code change.
-- **Cost:** replies use free-form messages inside the 24h service window (no template cost);
-  AI cost minimised via prompt caching.
+- **Multi-tenancy:** each school's data isolated; onboarding a school requires no code
+  change.
+- **Cost:** replies use free-form messages inside the 24h service window (no template
+  cost); AI cost minimised via prompt caching.
 - **Safety:** fail closed — on any generation error or ambiguity, hand off to staff.
-- **Privacy:** patient data stored per-clinic; only necessary PII collected.
+- **Privacy:** parent/child data stored per-school, only necessary PII collected.
 
 ## 11. Success Metrics (MVP)
 
-- **Response coverage:** % of inbound enquiries answered by the AI without staff. Target: high.
-- **Enquiry → appointment-request conversion rate.**
+- **Response coverage:** % of inbound enquiries answered by the AI without staff.
+  Target: high.
+- **Enquiry → admission-enquiry conversion rate.**
 - **Median first-response time** (seconds).
-- **Handoff rate** and handoff reasons (should trend down as knowledge improves, but never
-  at the expense of safety).
+- **Handoff rate** and handoff reasons (should trend down as knowledge improves, but
+  never at the expense of safety).
 - **Containment quality:** % of AI answers rated correct/appropriate on staff review.
 
 ## 12. Deliverables
 
-The complete design set: `CLAUDE.md`, `PRODUCT_REQUIREMENTS.md`, `AI_RECEPTIONIST_SPEC.md`,
-`CONVERSATION_FLOWS.md`, `FAQ_SCHEMA.json`, `INTENTS.md`, `SYSTEM_PROMPT.md`,
-`KNOWLEDGE_STRUCTURE.md`, `PROJECT_ARCHITECTURE.md`, `DEVELOPMENT_ROADMAP.md`.
+The complete design set: `/CLAUDE.md`, `PRODUCT_REQUIREMENTS.md`,
+`../03-engineering/AI_RECEPTIONIST_SPEC.md`, `CONVERSATION_FLOWS.md`,
+`../FAQ_SCHEMA.json`, `INTENTS.md`, `../03-engineering/SYSTEM_PROMPT.md`,
+`../03-engineering/KNOWLEDGE_STRUCTURE.md`, `../03-engineering/PROJECT_ARCHITECTURE.md`,
+`PRODUCT_ROADMAP.md`.

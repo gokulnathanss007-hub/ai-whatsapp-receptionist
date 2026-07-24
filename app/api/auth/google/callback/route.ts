@@ -1,8 +1,8 @@
 import { exchangeCodeForTokens, verifyState } from "@/lib/google/oauthClient";
 import { encryptToken } from "@/lib/google/tokenCrypto";
-import { upsertClinicGoogleAccount } from "@/lib/supabase/queries";
+import { upsertSchoolGoogleAccount } from "@/lib/supabase/queries";
 
-// Google redirects here after the clinic grants (or denies) calendar access.
+// Google redirects here after the school grants (or denies) calendar access.
 // See /docs/GOOGLE_CALENDAR_INTEGRATION.md §4.
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);
@@ -19,16 +19,16 @@ export async function GET(request: Request): Promise<Response> {
     return new Response("Missing code or state", { status: 400 });
   }
 
-  const clinicId = verifyState(state);
-  if (!clinicId) {
+  const schoolId = verifyState(state);
+  if (!schoolId) {
     return new Response("Invalid or expired state", { status: 400 });
   }
 
   try {
     const tokens = await exchangeCodeForTokens(code);
 
-    await upsertClinicGoogleAccount({
-      clinicId,
+    await upsertSchoolGoogleAccount({
+      schoolId,
       googleEmail: tokens.googleEmail,
       calendarId: "primary",
       encryptedAccessToken: encryptToken(tokens.accessToken),
@@ -38,7 +38,7 @@ export async function GET(request: Request): Promise<Response> {
     });
 
     return new Response(
-      `Google Calendar connected for clinic ${clinicId} (${tokens.googleEmail}). You can close this tab.`,
+      `Google Calendar connected for school ${schoolId} (${tokens.googleEmail}). You can close this tab.`,
       { status: 200 },
     );
   } catch (err) {

@@ -13,7 +13,7 @@
 
 The model is a decision-maker producing a structured, validated description of *what
 should happen next*. The backend (the **executor**) owns every side effect: what the
-patient actually receives, what is written to the database, what external systems are
+parent actually receives, what is written to the database, what external systems are
 called. This is the architecture that makes safety enforceable (code can veto any
 decision), channels pluggable (the same decision renders as text, buttons, or speech),
 and behaviour testable (decisions are data).
@@ -25,17 +25,17 @@ already a decision contract — fields, not free text driving side effects:
 
 | v1 field | Decision it encodes |
 |---|---|
-| `reply` | proposed patient-facing text (executor may replace it) |
+| `reply` | proposed parent-facing text (executor may replace it) |
 | `intent` | classification for routing/analytics |
 | `collected` | slots to merge into durable state |
 | `presenting_slots: true` | "show the real availability list" — executor renders it |
 | `booking_selection` | "book this exact slot id" — executor runs the Postgres-mutex insert |
-| `appointment_request` | "record a staff-confirmed request" (fallback path) |
+| `enquiry_request` | "record a staff-confirmed admission enquiry" (fallback path) |
 | `human_handoff` + `handoff_reason` | "escalate to staff" |
 
 Executor vetoes already in production (the pattern to preserve):
 - `safetyOverride.ts` forces handoff regardless of the model's decision.
-- Contradictory decisions (both `appointment_request` and `booking_selection`) →
+- Contradictory decisions (both `enquiry_request` and `booking_selection`) →
   the invalid one is dropped.
 - A booking conflict discards the model's optimistic `reply` and substitutes a
   deterministic message.
@@ -63,12 +63,12 @@ type Action =
   | ActionEnvelope<"show_list",           { text: string; sections: ListSection[] }> // ≤10 rows
   | ActionEnvelope<"show_calendar_slots", { leadIn: string; slots: SchedulingSlot[] }> // hydrated by executor
   | ActionEnvelope<"show_location",       Record<string, never>>
-  | ActionEnvelope<"send_pdf",            { documentKey: string }>   // clinic asset keys
+  | ActionEnvelope<"send_pdf",            { documentKey: string }>   // school asset keys
   | ActionEnvelope<"send_image",          { imageKey: string }>
   | ActionEnvelope<"handoff",             { reason: HandoffReason }>
-  | ActionEnvelope<"book_appointment",    { selectedSlotId: string; name: string; reason: string }>
-  | ActionEnvelope<"cancel_booking",      { appointmentRef: string }>
-  | ActionEnvelope<"reschedule_booking",  { appointmentRef: string; selectedSlotId: string }>;
+  | ActionEnvelope<"book_visit",          { selectedSlotId: string; name: string; reason: string }>
+  | ActionEnvelope<"cancel_visit",        { enquiryRef: string }>
+  | ActionEnvelope<"reschedule_visit",    { enquiryRef: string; selectedSlotId: string }>;
 
 interface Decision {
   intent: IntentId;
@@ -83,19 +83,19 @@ Example — the confirm moment before a booking:
 {
   "action": "show_buttons",
   "screen": "booking_confirmation",
-  "data": { "text": "Book Mon 5:00 PM with Dr. Meera?", "buttons": [{ "id": "<slotId>", "title": "Confirm" }, { "id": "menu_pick_another", "title": "Pick another time" }] }
+  "data": { "text": "Book a school visit for Mon 5:00 PM?", "buttons": [{ "id": "<slotId>", "title": "Confirm" }, { "id": "menu_pick_another", "title": "Pick another time" }] }
 }
 ```
 
 Contract rules:
 - **Ordered, small:** typically 1–2 actions per turn (e.g. `reply_text` + `show_list`).
-- **Keys, not content:** media actions reference clinic-knowledge asset keys — the model
+- **Keys, not content:** media actions reference school-knowledge asset keys — the model
   never emits URLs, file bytes, or raw interactive JSON.
 - **Slot ids only from the current turn's `<available_slots>`** (v1 rule carried over).
 - **Structured Outputs enforce the schema;** parse failure → fail closed to handoff.
 - **Backwards compatibility:** the executor accepts v1-shaped output during migration;
   v1 fields map 1:1 onto actions (`presenting_slots` → `show_calendar_slots`,
-  `human_handoff` → `handoff`, etc.). Additive-only versioning per CLAUDE.md §18.
+  `human_handoff` → `handoff`, etc.). Additive-only versioning.
 
 ## 4. The executor (Node.js)
 
@@ -107,7 +107,7 @@ Decision (parsed, schema-valid)
   │                  mutual-exclusion rules (book/cancel/reschedule are exclusive);
   │                  Meta limit enforcement (≤3 buttons, ≤10 rows, title lengths)
   ├─ 3. RESOLVE      hydrate actions with real data: slot list from SchedulingProvider,
-  │                  location from clinic knowledge, PDF from asset store
+  │                  location from school knowledge, PDF from asset store
   ├─ 4. EXECUTE      side effects in a fixed order:
   │                  writes first (book/cancel/reschedule via Postgres-mutex),
   │                  then messages (rendered per channel via the channel adapter)
@@ -119,7 +119,7 @@ Decision (parsed, schema-valid)
 Executor invariants:
 1. **No action executes unvalidated.** The model cannot make the executor exceed a Meta
    limit, book an unknown slot, or send an unregistered asset.
-2. **Writes precede sends** — the patient is never told something that didn't happen.
+2. **Writes precede sends** — the parent is never told something that didn't happen.
 3. **Idempotent per inbound `message.id`** — replaying the decision produces no
    duplicate side effects.
 4. **Channel adapters render, never decide.** WhatsApp text (V1), interactive (V2), and
@@ -128,11 +128,11 @@ Executor invariants:
 
 ## 5. Why this architecture (design rationale)
 
-- **Safety:** every dangerous outcome passes through a code gate that can refuse.
-  The prompt asks nicely; the executor enforces (proven pattern — CLAUDE.md §14).
+- **Safety:** every consequential outcome passes through a code gate that can refuse.
+  The prompt asks nicely; the executor enforces (proven pattern).
 - **Determinism:** business consequences (bookings, cancellations) are executed by
   tested code paths, not inferred from prose.
-- **Channel leverage:** one brain, many surfaces — the V3 voice receptionist reuses the
+- **Channel leverage:** one brain, many surfaces — the V3 voice front office reuses the
   entire decision layer.
 - **Testability:** decision fixtures make conversation behaviour unit-testable without a
   model call; executor behaviour is testable without a conversation.
@@ -147,5 +147,5 @@ Executor invariants:
 2. Add interactive actions (`show_buttons`, `show_list`, …) to the schema + prompt;
    executor renders them per `PATIENT_EXPERIENCE.md` limits.
 3. Extend prompt to emit the action-list shape natively; keep the v1-compat translator
-   until all clinics are on the new contract, then retire it (deprecate → migrate →
-   remove, CLAUDE.md §18).
+   until all schools are on the new contract, then retire it (deprecate → migrate →
+   remove).

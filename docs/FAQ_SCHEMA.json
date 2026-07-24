@@ -1,13 +1,13 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Medixum AI — Clinic FAQ Schema",
-  "description": "Structured, per-clinic FAQ knowledge base. One document per clinic. Injected into the receptionist prompt as the clinic knowledge block. Adding or editing FAQs never requires a code change.",
+  "title": "School Parent Enquiry AI — School FAQ Schema",
+  "description": "Structured, per-school FAQ knowledge base. One document per school. Injected into the front office AI prompt as the school knowledge block. Adding or editing FAQs never requires a code change.",
   "type": "object",
-  "required": ["clinic_id", "version", "faqs"],
+  "required": ["school_id", "version", "faqs"],
   "properties": {
-    "clinic_id": {
+    "school_id": {
       "type": "string",
-      "description": "Stable unique id for the clinic (matches clinics.id in Supabase)."
+      "description": "Stable unique id for the school (matches schools.id in Supabase)."
     },
     "version": {
       "type": "integer",
@@ -27,25 +27,24 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "Stable id for the FAQ entry, e.g. 'consultation_fee'."
+            "description": "Stable id for the FAQ entry, e.g. 'fee_structure'."
           },
           "category": {
             "type": "string",
             "enum": [
-              "consultation_fee",
-              "clinic_timings",
-              "parking",
-              "insurance",
+              "admission_enquiry",
+              "fee_structure",
+              "school_timings",
+              "transport",
+              "holidays_events",
+              "facilities",
+              "contact_office",
+              "certificates",
               "location",
-              "doctors",
-              "treatments",
-              "payment_methods",
-              "follow_up_policy",
-              "appointment_cancellation",
-              "rescheduling",
+              "general",
               "other"
             ],
-            "description": "FAQ category, aligned with INTENTS.md."
+            "description": "FAQ category — mirrors the WhatsApp main menu 1:1 and the school_faqs_category_check constraint (supabase/migrations/0012_rename_clinic_to_school.sql). Aligned with docs/02-product/INTENTS.md."
           },
           "question": {
             "type": "string",
@@ -53,7 +52,7 @@
           },
           "answer": {
             "type": "string",
-            "description": "The approved answer. Must be short and factual. The receptionist paraphrases this warmly but must not contradict it or invent beyond it."
+            "description": "The approved answer. Must be short and factual. The front office AI paraphrases this warmly but must not contradict it or invent beyond it."
           },
           "keywords": {
             "type": "array",
@@ -63,7 +62,7 @@
           "requires_staff": {
             "type": "boolean",
             "default": false,
-            "description": "If true, the receptionist defers to staff instead of answering directly (e.g. sensitive billing questions)."
+            "description": "If true, the front office AI defers to the school office instead of answering directly (e.g. exact fee amounts, certificate processing)."
           }
         },
         "additionalProperties": false
@@ -73,80 +72,81 @@
   "additionalProperties": false,
 
   "example": {
-    "clinic_id": "glow-skin-madurai-001",
-    "version": 3,
+    "school_id": "sunrise-public-school-madurai-001",
+    "version": 1,
     "locale": "en",
     "faqs": [
       {
-        "id": "consultation_fee",
-        "category": "consultation_fee",
-        "question": "What is the consultation fee?",
-        "answer": "Our consultation fee is ₹500.",
-        "keywords": ["fee", "charges", "consultation cost", "price"]
+        "id": "admission_enquiry",
+        "category": "admission_enquiry",
+        "question": "How do I apply for admission?",
+        "answer": "Share your child's name, age, and the grade you are applying for, and our admissions office will guide you through the next steps.",
+        "keywords": ["admission", "apply", "enquiry", "join", "enroll"]
       },
       {
-        "id": "clinic_timings",
-        "category": "clinic_timings",
-        "question": "What are your clinic timings?",
-        "answer": "We are open Monday to Saturday, 10 AM to 8 PM. We are closed on Sundays.",
-        "keywords": ["timing", "open", "hours", "working hours"]
+        "id": "fee_structure",
+        "category": "fee_structure",
+        "question": "What is the fee structure?",
+        "answer": "Fees vary by grade. Our admissions office will share the exact fee structure for the grade you are enquiring about.",
+        "keywords": ["fee", "fees", "cost", "charges", "tuition"],
+        "requires_staff": true
+      },
+      {
+        "id": "school_timings",
+        "category": "school_timings",
+        "question": "What are the school timings?",
+        "answer": "We are open Monday to Saturday, 9 AM to 4 PM. We are closed on Sundays.",
+        "keywords": ["timing", "hours", "open", "school hours"]
+      },
+      {
+        "id": "transport",
+        "category": "transport",
+        "question": "Is school bus transport available?",
+        "answer": "Yes, we offer bus transport on select routes. Share your area and our office will confirm if a route covers it.",
+        "keywords": ["bus", "transport", "route", "pickup", "drop"]
+      },
+      {
+        "id": "holidays_events",
+        "category": "holidays_events",
+        "question": "When is the next holiday?",
+        "answer": "Our academic calendar lists all holidays and events. Our office can share the current term's calendar with you.",
+        "keywords": ["holiday", "vacation", "event", "calendar"]
+      },
+      {
+        "id": "facilities",
+        "category": "facilities",
+        "question": "What facilities does the school have?",
+        "answer": "Our campus has a library, science and computer labs, a playground, and a sports ground.",
+        "keywords": ["facilities", "library", "lab", "playground", "sports"]
+      },
+      {
+        "id": "contact_office",
+        "category": "contact_office",
+        "question": "How do I contact the school office?",
+        "answer": "You can continue chatting here, and our office team will also be happy to speak with you directly.",
+        "keywords": ["contact", "office", "phone", "talk", "reach"]
+      },
+      {
+        "id": "certificates",
+        "category": "certificates",
+        "question": "How do I get a transfer certificate?",
+        "answer": "Transfer and bonafide certificates are issued by our office on request. Our office will guide you through the process.",
+        "keywords": ["certificate", "transfer certificate", "bonafide", "tc"],
+        "requires_staff": true
       },
       {
         "id": "location",
         "category": "location",
-        "question": "Where is the clinic located?",
-        "answer": "We are at 1st Floor, Anna Nagar Main Road, Madurai. Google Maps link is shared on request.",
+        "question": "Where is the school located?",
+        "answer": "We are at 45, College Road, Madurai. A Google Maps link is shared on request.",
         "keywords": ["address", "where", "location", "directions", "maps"]
       },
       {
-        "id": "parking",
-        "category": "parking",
-        "question": "Is parking available?",
-        "answer": "Yes, two-wheeler and car parking are available in front of the clinic.",
-        "keywords": ["parking", "car", "bike"]
-      },
-      {
-        "id": "insurance",
-        "category": "insurance",
-        "question": "Do you accept insurance?",
-        "answer": "Most cosmetic and dermatology consultations are self-pay. For specific insurance queries, our staff will assist you.",
-        "keywords": ["insurance", "claim", "mediclaim"],
-        "requires_staff": true
-      },
-      {
-        "id": "doctors",
-        "category": "doctors",
-        "question": "Who are the doctors?",
-        "answer": "Consultations are with Dr. Meera, our consultant dermatologist. Cosmetology procedures are performed under her supervision.",
-        "keywords": ["doctor", "dermatologist", "who"]
-      },
-      {
-        "id": "payment_methods",
-        "category": "payment_methods",
-        "question": "What payment methods are accepted?",
-        "answer": "We accept cash, UPI, and cards.",
-        "keywords": ["payment", "upi", "card", "cash", "gpay"]
-      },
-      {
-        "id": "follow_up_policy",
-        "category": "follow_up_policy",
-        "question": "Is there a follow-up charge?",
-        "answer": "A follow-up within 7 days of consultation is complimentary.",
-        "keywords": ["follow up", "review", "revisit"]
-      },
-      {
-        "id": "appointment_cancellation",
-        "category": "appointment_cancellation",
-        "question": "How do I cancel an appointment?",
-        "answer": "You can let us know here and our staff will cancel it for you.",
-        "keywords": ["cancel", "cancellation"]
-      },
-      {
-        "id": "rescheduling",
-        "category": "rescheduling",
-        "question": "Can I reschedule my appointment?",
-        "answer": "Yes, share your preferred new day and time and we'll update your request.",
-        "keywords": ["reschedule", "change time", "postpone"]
+        "id": "curriculum",
+        "category": "general",
+        "question": "What curriculum/board do you follow?",
+        "answer": "We follow the CBSE curriculum from Kindergarten through Grade 12.",
+        "keywords": ["curriculum", "board", "cbse", "syllabus"]
       }
     ]
   }

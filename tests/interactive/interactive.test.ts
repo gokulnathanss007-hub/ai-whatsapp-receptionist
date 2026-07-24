@@ -134,20 +134,20 @@ describe("tapped slot outranks everything in selection resolution", () => {
   });
 });
 
-describe("treatments menu (tappable list from clinic knowledge)", async () => {
-  const { renderTreatmentsList } = await import("@/lib/decision-engine/mainMenu");
+describe("admission programs menu (tappable list from school knowledge)", async () => {
+  const { renderSchoolServicesList } = await import("@/lib/decision-engine/mainMenu");
   const services = [
-    { service_key: "acne", display_name: "Acne", high_level_info: "Treatments to improve acne; consultation required." },
-    { service_key: "hydrafacial", display_name: "HydraFacial", high_level_info: null },
+    { service_key: "kindergarten", display_name: "Kindergarten", high_level_info: "Play group through UKG; admission enquiries welcome year-round." },
+    { service_key: "primary", display_name: "Primary School (Grades 1-5)", high_level_info: null },
   ];
 
-  it("rows carry treatment_<service_key> ids and knowledge-driven titles", () => {
-    const action = renderTreatmentsList(services);
+  it("rows carry service_<service_key> ids and knowledge-driven titles", () => {
+    const action = renderSchoolServicesList(services);
     expect(action.action).toBe("show_list");
-    expect(action.screen).toBe("treatment_info");
-    expect(action.data.sections[0]!.title).toBe("Popular treatments");
-    expect(action.data.sections[0]!.rows.map((r) => r.id)).toEqual(["treatment_acne", "treatment_hydrafacial"]);
-    expect(action.data.sections[0]!.rows[0]!.description).toContain("acne");
+    expect(action.screen).toBe("school_service_info");
+    expect(action.data.sections[0]!.title).toBe("Our programs");
+    expect(action.data.sections[0]!.rows.map((r: { id: string }) => r.id)).toEqual(["service_kindergarten", "service_primary"]);
+    expect(action.data.sections[0]!.rows[0]!.description).toContain("admission");
     expect(action.data.sections[0]!.rows[1]!.description).toBeUndefined();
   });
 
@@ -157,14 +157,14 @@ describe("treatments menu (tappable list from clinic knowledge)", async () => {
       display_name: `Service ${i}`,
       high_level_info: null,
     }));
-    expect(renderTreatmentsList(many).data.sections[0]!.rows).toHaveLength(10);
+    expect(renderSchoolServicesList(many).data.sections[0]!.rows).toHaveLength(10);
   });
 });
 
 describe("translateTurnToActions (Decision Engine step 1 — {action, screen, data} envelopes)", () => {
-  const listReply = `Here are the open times with Dr. Meera:\n\n• ${FIVE_PM.label}\n• ${SEVEN_PM.label}\n\nWhich time works for you?`;
+  const listReply = `Here are the open times:\n\n• ${FIVE_PM.label}\n• ${SEVEN_PM.label}\n\nWhich time works for you?`;
 
-  it("interactive clinic + slot list → show_calendar_slots envelope on the slot_picker screen", () => {
+  it("interactive school + slot list → show_calendar_slots envelope on the slot_picker screen", () => {
     const actions = translateTurnToActions({
       finalReply: listReply,
       presentedSlots: [FIVE_PM, SEVEN_PM],
@@ -175,7 +175,7 @@ describe("translateTurnToActions (Decision Engine step 1 — {action, screen, da
     expect(envelope.action).toBe("show_calendar_slots");
     expect(envelope.screen).toBe("slot_picker");
     const action = envelope as Extract<(typeof actions)[number], { action: "show_calendar_slots" }>;
-    expect(action.data.leadIn).toBe("Here are the open times with Dr. Meera:\n\nWhich time works for you?");
+    expect(action.data.leadIn).toBe("Here are the open times:\n\nWhich time works for you?");
     expect(action.data.slots).toHaveLength(2);
   });
 
@@ -189,7 +189,7 @@ describe("translateTurnToActions (Decision Engine step 1 — {action, screen, da
     expect(actions[0]!.screen).toBe("booking_failed");
   });
 
-  it("text-only clinic → plain reply_text envelope, byte-identical text to v1 behaviour", () => {
+  it("text-only school → plain reply_text envelope, byte-identical text to v1 behaviour", () => {
     const actions = translateTurnToActions({
       finalReply: listReply,
       presentedSlots: [FIVE_PM, SEVEN_PM],
@@ -198,14 +198,14 @@ describe("translateTurnToActions (Decision Engine step 1 — {action, screen, da
     expect(actions).toEqual([{ action: "reply_text", screen: "free_text", data: { text: listReply } }]);
   });
 
-  it("interactive clinic but no slots this turn → plain text envelope", () => {
+  it("interactive school but no slots this turn → plain text envelope", () => {
     const actions = translateTurnToActions({
-      finalReply: "✅ Your appointment is booked.",
+      finalReply: "✅ Your visit is booked.",
       presentedSlots: null,
       interactiveEnabled: true,
     });
     expect(actions).toEqual([
-      { action: "reply_text", screen: "free_text", data: { text: "✅ Your appointment is booked." } },
+      { action: "reply_text", screen: "free_text", data: { text: "✅ Your visit is booked." } },
     ]);
   });
 });

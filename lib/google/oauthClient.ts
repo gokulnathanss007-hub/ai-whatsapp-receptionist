@@ -3,7 +3,7 @@ import { google } from "googleapis";
 
 // Calendar read/write (needed for freebusy + event creation in Phase 2) plus
 // userinfo.email so we can record *which* Google account got connected —
-// useful for a clinic to confirm "yes, that's Dr. Priya's calendar."
+// useful for a school to confirm "yes, that's the admissions office calendar."
 const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/calendar",
   "https://www.googleapis.com/auth/userinfo.email",
@@ -25,13 +25,13 @@ export function getGoogleOAuthClient() {
   );
 }
 
-// Signs `clinicId` into the OAuth `state` param so the callback can trust it
+// Signs `schoolId` into the OAuth `state` param so the callback can trust it
 // without a session, and an attacker can't attach their own Google tokens to
-// an arbitrary clinic_id by hand-crafting a callback URL. Reuses
+// an arbitrary school_id by hand-crafting a callback URL. Reuses
 // GOOGLE_TOKEN_ENCRYPTION_KEY as the HMAC key — same trust boundary
 // (server-only secret) as token encryption, no need for a third secret.
-export function signState(clinicId: string): string {
-  const payload = Buffer.from(JSON.stringify({ clinicId, ts: Date.now() })).toString(
+export function signState(schoolId: string): string {
+  const payload = Buffer.from(JSON.stringify({ schoolId, ts: Date.now() })).toString(
     "base64url",
   );
   const signature = createHmac("sha256", getEnv("GOOGLE_TOKEN_ENCRYPTION_KEY"))
@@ -59,25 +59,25 @@ export function verifyState(state: string): string | null {
     if (
       typeof decoded !== "object" ||
       decoded === null ||
-      typeof (decoded as { clinicId?: unknown }).clinicId !== "string" ||
+      typeof (decoded as { schoolId?: unknown }).schoolId !== "string" ||
       typeof (decoded as { ts?: unknown }).ts !== "number"
     ) {
       return null;
     }
-    const { clinicId, ts } = decoded as { clinicId: string; ts: number };
+    const { schoolId, ts } = decoded as { schoolId: string; ts: number };
     if (Date.now() - ts > STATE_TTL_MS) return null;
-    return clinicId;
+    return schoolId;
   } catch {
     return null;
   }
 }
 
-export function buildGoogleAuthUrl(clinicId: string): string {
+export function buildGoogleAuthUrl(schoolId: string): string {
   return getGoogleOAuthClient().generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
     scope: GOOGLE_SCOPES,
-    state: signState(clinicId),
+    state: signState(schoolId),
   });
 }
 

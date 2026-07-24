@@ -32,7 +32,7 @@ describe("resolveSelectedSlot — 2026-07-04 'Today 7.pm' incident regression", 
     expect(res).toEqual({ kind: "matched", slot: SEVEN_PM });
   });
 
-  it("the incident: corrupted id + 'Today 7.pm' recovers the exact 7 PM slot from the patient's words", () => {
+  it("the incident: corrupted id + 'Today 7.pm' recovers the exact 7 PM slot from the parent's words", () => {
     const res = resolveSelectedSlot({
       selectedSlotId: "garbled-by-the-model",
       availableSlots: [FIVE_PM, SEVEN_PM],
@@ -54,7 +54,7 @@ describe("resolveSelectedSlot — 2026-07-04 'Today 7.pm' incident regression", 
     expect(res.kind === "recovered" && res.slot.label).toBe("Today – 7:00 PM");
   });
 
-  it("stays unresolved when the patient's words match nothing offered", () => {
+  it("stays unresolved when the parent's words match nothing offered", () => {
     const res = resolveSelectedSlot({
       selectedSlotId: "garbled",
       availableSlots: [FIVE_PM, SEVEN_PM],

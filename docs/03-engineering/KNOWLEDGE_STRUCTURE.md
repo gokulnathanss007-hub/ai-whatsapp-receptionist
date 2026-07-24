@@ -1,185 +1,209 @@
-# KNOWLEDGE_STRUCTURE.md — Clinic Knowledge Structure
+# KNOWLEDGE_STRUCTURE.md — School Knowledge Structure
 
 > Location: `docs/03-engineering/`. Related: `SYSTEM_PROMPT.md` (injection target),
 > `../05-database/DATABASE_SCHEMA.md` (consolidated schema), `docs/FAQ_SCHEMA.json`
-> (FAQ format), `/CLAUDE.md` §7 (multi-tenant rules).
+> (FAQ format), `/CLAUDE.md` §6 (multi-tenant rules).
 
-The core multi-tenant principle: **every clinic has its own data without changing code.**
-Onboarding a clinic = adding rows/records, never editing the prompt or the application.
+The core multi-tenant principle: **every school has its own data without changing code.**
+Onboarding a school = adding rows/records, never editing the prompt or the application.
 
-This document defines what a clinic's knowledge is, how it's stored, and how it becomes the
-`{{CLINIC_KNOWLEDGE_BLOCK}}` injected into the system prompt (`SYSTEM_PROMPT.md`).
+This document defines what a school's knowledge is, how it's stored, and how it becomes the
+`{{SCHOOL_KNOWLEDGE_BLOCK}}` injected into the system prompt (`SYSTEM_PROMPT.md`). The
+canonical worked example throughout is Sunrise Public School (Madurai) — see
+`supabase/seed/sunrise_public_school.sql`.
 
 ---
 
-## 1. What a clinic's knowledge contains
+## 1. What a school's knowledge contains
 
-1. **Clinic profile** — name, city, address, Google Maps link, timings, parking, languages.
-   `opening_hours` is the single structured source of truth for the clinic's real open/close
-   times: the AI receptionist's stated "Timings" (`lib/knowledge/loader.ts`) and the actual
-   bookable Google Calendar slots (`lib/scheduling/listAvailableSlots.ts`) both read this same
-   field, so they can never drift out of sync — see `docs/GOOGLE_CALENDAR_INTEGRATION.md` §3.
-2. **Doctors** — names and roles (as the receptionist may reference them).
-3. **Services** — the treatments this clinic offers (subset of the master list) with a
-   high-level, non-clinical description each.
-4. **Fees & policies** — consultation fee, payment methods, follow-up policy, cancellation
-   and rescheduling policy, whether auto-confirmation of appointments is enabled.
+1. **School profile** — name, city, address, Google Maps link, timings, parking,
+   languages. `opening_hours` is the single structured source of truth for the school's
+   real open/close times: the AI front office's stated "Timings" (`lib/knowledge/loader.ts`)
+   and the actual bookable Google Calendar slots (`lib/scheduling/listAvailableSlots.ts`)
+   both read this same field, so they can never drift out of sync — see
+   `GOOGLE_CALENDAR_INTEGRATION.md` §3.
+2. **Staff** — names and roles (as the front office may reference them, e.g. Principal,
+   Admissions Officer). There is no per-staff-member booking — a school visit slot is a
+   time only, never assigned to a specific staff member.
+3. **Services** — the programs/grades this school offers (e.g. Kindergarten, Primary
+   School) with a high-level, non-promissory description each.
+4. **Policies** — payment methods, follow-up policy, cancellation and rescheduling
+   policy, whether auto-confirmation of school visits is enabled. There is **no**
+   single "consultation fee" field — schools have tiered, grade-dependent fee
+   structures, so fee information lives only as a `school_faqs` row under category
+   `fee_structure` (see §3).
 5. **FAQs** — structured per `FAQ_SCHEMA.json`.
 
-All of it is clinic-specific config. None of it lives in code.
+All of it is school-specific config. None of it lives in code.
 
 ---
 
 ## 2. Storage model (Supabase / Postgres)
 
-Knowledge is stored relationally and assembled at request time. Suggested tables (align with
-existing CGE `clinics` table; add the rest):
+Knowledge is stored relationally and assembled at request time. Actual schema
+(`lib/supabase/types.ts`, `supabase/migrations/0012_rename_clinic_to_school.sql`):
 
 ```
-clinics
+schools
   id (uuid, pk)
   name
   city
   address
   maps_url
-  timings              -- freeform display fallback, e.g. "Mon-Sat 10:00-20:00; Sun closed"
-  opening_hours        -- jsonb, single source of truth: {"mon":[["10:00","20:00"]], ...}
+  timings              -- freeform display fallback, e.g. "Mon-Sat 9:00-16:00; Sun closed"
+  opening_hours        -- jsonb, single source of truth: {"mon":[["09:00","16:00"]], ...}
   slot_duration_minutes -- int, default 30
   timezone             -- text, default "Asia/Kolkata"
   parking_info
   languages            -- ["en"] for MVP
-  consultation_fee     -- numeric
-  payment_methods      -- ["cash","upi","card"]
+  payment_methods      -- ["cash","upi","card","bank_transfer"]
   follow_up_policy
   cancellation_policy
   rescheduling_policy
   auto_confirm_enabled -- boolean, default false
+  interactive_enabled  -- boolean, default false (V2 rollout flag)
+  reception_phone      -- direct contact number for the handoff message, nullable
   knowledge_version    -- integer, bumped on any change (cache key)
   created_at, updated_at
 
-clinic_doctors
+school_staff
   id (uuid, pk)
-  clinic_id (fk)
+  school_id (fk)
   name
-  role                 -- e.g. "Consultant Dermatologist"
+  role                 -- e.g. "Principal", "Admissions Officer"
   is_active
 
-clinic_services
+school_services
   id (uuid, pk)
-  clinic_id (fk)
-  service_key          -- e.g. "acne", "laser", "hydrafacial" (from master list)
+  school_id (fk)
+  service_key          -- e.g. "kindergarten", "primary", "middle" (school-defined, no fixed master list)
   display_name
-  high_level_info      -- non-clinical description the receptionist may use
+  high_level_info      -- non-promissory description the front office may use
   is_active
 
-clinic_faqs
+school_faqs
   id (uuid, pk)
-  clinic_id (fk)
-  faq_id               -- e.g. "consultation_fee" (per FAQ_SCHEMA.json)
-  category
+  school_id (fk)
+  faq_id               -- e.g. "fee_structure" (per FAQ_SCHEMA.json)
+  category              -- admission_enquiry|fee_structure|school_timings|transport|
+                          holidays_events|facilities|contact_office|certificates|
+                          location|general|other
   question
   answer
   keywords (text[])
   requires_staff (boolean)
 ```
 
-A clinic's `knowledge_version` is the cache key: bump it on any edit so the injected block
-(and its cached prompt prefix) refreshes.
+Note there is **no `consultation_fee` column** on `schools` — it was dropped in
+`0012_rename_clinic_to_school.sql` because schools have tiered/complex fee structures,
+not one consultation price. A school's `knowledge_version` is the cache key: bump it on
+any edit so the injected block (and its cached prompt prefix) refreshes.
 
 ---
 
-## 3. Master service list (reference)
+## 3. Service/program keys (reference, not a fixed master list)
 
-Clinics select their offered services from this master list. Each maps to an intent in
-`INTENTS.md`:
+Unlike a clinic's fixed treatment master list, a school's `school_services.service_key`
+is freely defined per school — there is no code-enforced enum. The seed data
+(`supabase/seed/sunrise_public_school.sql`) uses these common values as a starting
+convention for new schools:
 
-`acne`, `acne_scars`, `pigmentation`, `melasma`, `hair_fall`, `prp`, `gfc`,
-`hair_transplant`, `laser_hair_reduction`, `anti_aging`, `botox`, `fillers`,
-`skin_rejuvenation`, `chemical_peel`, `hydrafacial`, `wart_removal`, `mole_removal`,
-`nail_disorders`, `eczema`, `psoriasis`, `vitiligo`, `fungal_infections`.
+`kindergarten`, `primary` (Grades 1-5), `middle` (Grades 6-8), `high_school`
+(Grades 9-10), `senior_secondary` (Grades 11-12, streams like Science/Commerce).
 
-A clinic only exposes the services it actually provides; the receptionist won't offer a
-service the clinic hasn't enabled.
+A school only exposes the programs/grades it actually offers; the front office won't
+mention a grade the school hasn't enabled.
 
 ---
 
 ## 4. How the knowledge block is assembled
 
-At request time, the knowledge loader (`/lib/knowledge`) reads the clinic's records and
-renders a compact, readable block. Rendered example:
+At request time, the knowledge loader (`lib/knowledge/loader.ts`
+`renderSchoolKnowledgeBlock`) reads the school's records and renders a compact, readable
+block. Actual rendered example (Sunrise Public School):
 
 ```
-CLINIC KNOWLEDGE
-Clinic: Glow Skin Clinic (Madurai)
-Address: 1st Floor, Anna Nagar Main Road, Madurai
-Maps: https://maps.google.com/...
-Timings: Monday to Saturday, 10 AM to 8 PM. Closed Sunday.
-Parking: Two-wheeler and car parking in front of the clinic.
+SCHOOL KNOWLEDGE
+School: Sunrise Public School (Madurai)
+Address: 45, College Road, Madurai
+Maps: https://maps.google.com/?q=Sunrise+Public+School+Madurai
+Timings: Monday to Saturday, 9 AM to 4 PM. Closed Sunday.
+Parking: Visitor parking available inside the main gate.
 Languages: English.
-Consultation fee: ₹500.
-Payment methods: cash, UPI, card.
-Follow-up policy: Follow-up within 7 days is complimentary.
-Cancellation: Inform us and staff will cancel.
-Rescheduling: Share new preferred day/time; staff will update.
-Auto-confirm appointments: NO (record requests; staff confirm).
+Payment methods: cash, upi, card, bank_transfer.
+Follow-up policy: Our admissions office follows up within 2 working days of an enquiry.
+Cancellation: Let us know and our office will cancel your scheduled visit.
+Rescheduling: Share your preferred new day/time; our office will update it.
+Auto-confirm visits: NO (record requests; office confirms).
 
-Doctors:
-- Dr. Meera — Consultant Dermatologist
+Staff:
+- Mrs. Kavitha Raman — Principal
+- Mr. Arun Kumar — Admissions Officer
 
-Services offered (high-level only):
-- Acne — treatments to improve acne; consultation required.
-- Pigmentation — treatments to improve uneven skin tone; consultation required.
-- Laser hair reduction — reduces unwanted hair over sessions; consultation required.
-- HydraFacial — hydrating facial treatment; consultation required.
+Programs offered (high-level only):
+- Kindergarten — Play group through UKG; admission enquiries welcome year-round.
+- Primary School (Grades 1-5) — CBSE-affiliated primary curriculum.
+- Middle School (Grades 6-8) — CBSE-affiliated middle school curriculum.
+- High School (Grades 9-10) — CBSE-affiliated high school curriculum, board exam preparation.
+- Senior Secondary (Grades 11-12) — Science and Commerce streams available.
 
 FAQs:
-- Consultation fee: Our consultation fee is ₹500.
-- Timings: Open Mon-Sat, 10 AM to 8 PM; closed Sunday.
-- Insurance: Mostly self-pay; staff assist with specific queries. [defer to staff]
+- How do I apply for admission?: Share your child's name, age, and the grade you are
+  applying for, and our admissions office will guide you through the next steps.
+- What is the fee structure?: Fees vary by grade. Our admissions office will share the
+  exact fee structure for the grade you are enquiring about. [defer to staff]
+- What are the school timings?: We are open Monday to Saturday, 9 AM to 4 PM. We are
+  closed on Sundays.
 ...
 ```
 
 Rules for the renderer:
 - Keep it compact and factual — it's injected on every message (cached).
 - Mark `requires_staff` FAQs clearly so the model defers.
-- Never include anything the receptionist isn't allowed to say (no clinical detail).
+- Never include anything the front office isn't allowed to say (no admission-outcome
+  promises).
 
 ---
 
-## 5. Onboarding a new clinic (no-code)
+## 5. Onboarding a new school (no-code)
 
-1. Create the `clinics` row (profile, fee, timings, policies, `auto_confirm_enabled`).
-2. Add `clinic_doctors`.
-3. Select `clinic_services` from the master list, with high-level descriptions.
-4. Add `clinic_faqs` (start from a default template, edit per clinic).
+1. Create the `schools` row (profile, timings, policies, `opening_hours`,
+   `auto_confirm_enabled`).
+2. Add `school_staff` rows.
+3. Add `school_services` rows for each program/grade offered, with high-level
+   descriptions.
+4. Add `school_faqs` (start from a default template, edit per school) — including a
+   `fee_structure` category row, since there is no dedicated fee field on `schools`.
 5. Set `knowledge_version = 1`.
-6. Point the clinic's WhatsApp number → the shared webhook; the loader resolves the clinic
-   by the WhatsApp phone-number id.
+6. Point the school's WhatsApp number → the shared webhook; the loader resolves the
+   school by the WhatsApp phone-number id.
 
-No prompt edits. No deploys. A clinic is live once its records exist and its number is mapped.
+No prompt edits. No deploys. A school is live once its records exist and its number is
+mapped.
 
 ---
 
-## 6. Clinic resolution (which clinic is this message for?)
+## 6. School resolution (which school is this message for?)
 
 Inbound webhook payloads include the business phone-number id that received the message.
 Maintain a mapping:
 
 ```
-clinic_whatsapp_numbers
+school_whatsapp_numbers
   id (uuid, pk)
-  clinic_id (fk)
+  school_id (fk)
   phone_number_id      -- Meta WhatsApp phone number id
   display_number
 ```
 
-The pipeline looks up `phone_number_id` → `clinic_id`, loads that clinic's knowledge, and
-builds the prompt. This is what makes one deployment serve many clinics.
+The pipeline looks up `phone_number_id` → `school_id`, loads that school's knowledge, and
+builds the prompt. This is what makes one deployment serve many schools.
 
 ---
 
 ## 7. Versioning & caching
 
-- `knowledge_version` bumps on any edit to profile, doctors, services, or FAQs.
-- The prompt cache key includes `clinic_id` + `knowledge_version`, so edits invalidate the
-  cached prefix cleanly and the next message uses fresh knowledge.
+- `knowledge_version` bumps on any edit to profile, staff, services, or FAQs.
+- The prompt cache key includes `school_id` + `knowledge_version` (`knowledgeCacheKey()`
+  in `lib/knowledge/loader.ts`), so edits invalidate the cached prefix cleanly and the
+  next message uses fresh knowledge.

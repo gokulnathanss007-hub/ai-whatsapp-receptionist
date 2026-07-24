@@ -1,15 +1,14 @@
-# Medixum AI — AI Clinic Growth System
+# School Parent Enquiry AI — AI WhatsApp Parent Enquiry System
 
-**Medixum AI is building India's leading AI-powered Clinic Growth System.**
-This repository contains **Version 1: the AI WhatsApp Receptionist** — live for
-dermatology & cosmetology clinics — and the documentation architecture for the full
-platform (V1 Receptionist → V2 Clinic Growth System → V3 AI Voice Receptionist →
-V4 Complete Platform).
+**School Parent Enquiry AI** is a WhatsApp AI front-office system for schools.
+This repository contains **Version 1: the AI WhatsApp Parent Enquiry System** — live for
+K-12 schools — and the documentation architecture for the full platform.
 
-The receptionist answers every patient WhatsApp enquiry in seconds in the voice of a
-premium front desk: FAQs, lead qualification, real calendar-checked appointment booking,
-and clean human handoff for anything medical or sensitive. It never diagnoses,
-prescribes, or behaves like a general AI assistant.
+The system answers every parent WhatsApp enquiry in seconds in the voice of a
+premium school front office: admissions FAQs, lead qualification, real calendar-checked
+visit booking, and clean human handoff for anything sensitive or unknown. It never
+promises admission outcomes, quotes unconfirmed fees, or behaves like a general AI
+assistant.
 
 ## Start here
 
@@ -24,7 +23,7 @@ prescribes, or behaves like a general AI assistant.
 
 Next.js (App Router) on Vercel · Meta WhatsApp Cloud API (direct) · OpenAI GPT-5 nano
 (Structured Outputs + prompt caching) · Supabase (Postgres) · Trigger.dev v4 ·
-Google Calendar API (per-clinic OAuth). Architecture:
+Google Calendar API (per-school OAuth). Architecture:
 [`docs/03-engineering/PROJECT_ARCHITECTURE.md`](docs/03-engineering/PROJECT_ARCHITECTURE.md).
 
 ## Development
@@ -37,7 +36,7 @@ npm run typecheck      # strict TS — merge gate
 npm test               # vitest — merge gate
 ```
 
-Environment setup and clinic onboarding runbook:
+Environment setup and school onboarding runbook:
 [`docs/08-deployment/DEPLOYMENT.md`](docs/08-deployment/DEPLOYMENT.md)
 (env template: `.env.example`).
 
@@ -56,5 +55,5 @@ Environment setup and clinic onboarding runbook:
 ## The one rule
 
 If a change contradicts [`CLAUDE.md`](CLAUDE.md), update `CLAUDE.md` first (with
-approval), then change the code. Safety rules (never diagnose, never prescribe,
-fail-closed handoff) are permanent and non-negotiable.
+approval), then change the code. Safety rules (never promise admission, never invent
+fees, fail-closed handoff) are permanent and non-negotiable.

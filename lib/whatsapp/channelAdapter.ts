@@ -1,5 +1,5 @@
 import type { Action } from "@/lib/decision-engine/types";
-import { sendWhatsAppTextMessage } from "@/lib/whatsapp/sendMessage";
+import { sendWhatsAppDocument, sendWhatsAppImage, sendWhatsAppTextMessage } from "@/lib/whatsapp/sendMessage";
 import {
   sendWhatsAppButtons,
   sendWhatsAppListMessage,
@@ -13,7 +13,7 @@ import {
  * recorded as this turn's reply row).
  *
  * Every interactive send is wrapped: if Meta rejects it (policy hiccup,
- * limit edge), the SAME turn falls back to plain text — a patient must
+ * limit edge), the SAME turn falls back to plain text — a parent must
  * always receive something readable, and every tap has a typed equivalent
  * anyway (PATIENT_EXPERIENCE.md §6.2).
  */
@@ -84,7 +84,7 @@ export async function executeActionsOnWhatsApp(params: {
               to: params.to,
               bodyText: envelope.data.welcomeText,
               buttonLabel: "Main Menu",
-              sections: [{ title: "Clinic Services", rows: envelope.data.items }],
+              sections: [{ title: "School Services", rows: envelope.data.items }],
             }),
           envelope,
         );
@@ -103,11 +103,11 @@ export async function executeActionsOnWhatsApp(params: {
         );
         break;
       case "show_location": {
-        // No per-clinic coordinates yet — the maps link + address text IS
+        // No per-school coordinates yet — the maps link + address text IS
         // the location experience for now; a native location message slots
-        // in here once lat/long land in clinic knowledge.
+        // in here once lat/long land in school knowledge.
         const lines = [
-          `📍 ${envelope.data.clinicName}`,
+          `📍 ${envelope.data.schoolName}`,
           envelope.data.address,
           envelope.data.mapsUrl,
         ].filter((line): line is string => Boolean(line));
@@ -115,14 +115,29 @@ export async function executeActionsOnWhatsApp(params: {
         break;
       }
       case "send_pdf":
+        lastOutboundId = await withTextFallback(
+          () =>
+            sendWhatsAppDocument({
+              phoneNumberId: params.phoneNumberId,
+              to: params.to,
+              link: envelope.data.fileUrl,
+              filename: envelope.data.filename,
+              caption: envelope.data.caption,
+            }),
+          envelope,
+        );
+        break;
       case "send_image":
-        // Designed (PATIENT_EXPERIENCE.md §8) — no clinic asset registry
-        // yet. Never drop a turn on an unrenderable action: send the text.
-        console.error("Media action not yet renderable — falling back to text", {
-          action: envelope.action,
-          assetKey: envelope.data.assetKey,
-        });
-        lastOutboundId = await sendText(envelope.data.fallbackText);
+        lastOutboundId = await withTextFallback(
+          () =>
+            sendWhatsAppImage({
+              phoneNumberId: params.phoneNumberId,
+              to: params.to,
+              link: envelope.data.fileUrl,
+              caption: envelope.data.caption,
+            }),
+          envelope,
+        );
         break;
     }
 

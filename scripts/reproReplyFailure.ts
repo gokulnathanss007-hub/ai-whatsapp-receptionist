@@ -1,8 +1,10 @@
 /* Reproduces the exact "Monday 10am" turn that failed closed to handoff in
- * production (run_cmr6kuenl6dyv0ioofmbuh2jc) — same clinic knowledge, same
- * slots block shape, same message — several times in a row, to distinguish
- * a deterministic failure (prompt/schema bug) from a flaky one (transient
- * API/proxy error that needs retries). Run: npx tsx scripts/reproReplyFailure.ts
+ * production (run_cmr6kuenl6dyv0ioofmbuh2jc, clinic-era pilot) — same school
+ * knowledge, same slots block shape, same message — several times in a row,
+ * to distinguish a deterministic failure (prompt/schema bug) from a flaky
+ * one (transient API/proxy error that needs retries).
+ * NOTE: SCHOOL_ID below is a stale clinic-era pilot value — point it at a
+ * real schools.id before running. Run: npx tsx scripts/reproReplyFailure.ts
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -18,12 +20,12 @@ async function main() {
   const { buildMessages, renderCollectedInfoBlock } = await import("@/lib/ai/promptBuilder");
   const { generateReceptionistReply } = await import("@/lib/ai/openaiClient");
   const { parseAiOutput } = await import("@/lib/ai/outputParser");
-  const { loadClinicKnowledge, renderClinicKnowledgeBlock } = await import("@/lib/knowledge/loader");
+  const { loadSchoolKnowledge, renderSchoolKnowledgeBlock } = await import("@/lib/knowledge/loader");
   const { renderAvailableSlotsBlock } = await import("@/lib/scheduling/renderSlotsBlock");
 
-  const clinicId = "ff605796-fc70-42cb-b10d-ef67c5b5d092";
-  const knowledge = await loadClinicKnowledge(clinicId);
-  const knowledgeBlock = renderClinicKnowledgeBlock(knowledge);
+  const schoolId = "ff605796-fc70-42cb-b10d-ef67c5b5d092";
+  const knowledge = await loadSchoolKnowledge(schoolId);
+  const knowledgeBlock = renderSchoolKnowledgeBlock(knowledge);
 
   // Mirrors the failed run: exact match found for Monday 10:00 IST.
   const slotsBlock = renderAvailableSlotsBlock([
@@ -36,13 +38,13 @@ async function main() {
   ]);
 
   const messages = buildMessages({
-    clinicName: knowledge.profile.name,
+    schoolName: knowledge.profile.name,
     knowledgeBlock,
     collectedInfoBlock: renderCollectedInfoBlock({}),
     availableSlotsBlock: slotsBlock,
     history: [
       { direction: "inbound", body: "Hii" },
-      { direction: "outbound", body: "Hi there! Welcome back to Glow Skin Clinic. How can I help you today?" },
+      { direction: "outbound", body: `Hi there! Welcome back to ${knowledge.profile.name}. How can I help you today?` },
     ].map((m, i) => ({
       id: String(i),
       conversation_id: "x",
@@ -52,7 +54,7 @@ async function main() {
       intent: null,
       created_at: new Date().toISOString(),
     })),
-    newMessage: "I want to book appointment for Monday 10am",
+    newMessage: "I want to book a visit for Monday 10am",
   });
 
   for (let attempt = 1; attempt <= 4; attempt++) {

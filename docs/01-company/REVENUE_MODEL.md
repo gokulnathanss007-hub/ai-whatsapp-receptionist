@@ -1,29 +1,29 @@
 # REVENUE_MODEL.md — Business & Revenue Model
 
 > ⚠️ Figures marked PROPOSED require founder approval (see `PRICING.md`).
-> Related: `GOALS.md` (targets), `BUSINESS.md` (strategy), `/CLAUDE.md` §17 (cost-scaling rules).
+> Related: `GOALS.md` (targets), `BUSINESS.md` (strategy).
 
 ---
 
 ## 1. Business model
 
-**B2B SaaS subscription, per clinic, per month** — with metered pass-through for
+**B2B SaaS subscription, per school, per month** — with metered pass-through for
 hard-cost channels (WhatsApp template messages in V2+, voice minutes in V3+).
 
 Revenue streams by version:
 
 | Stream | Version | Type |
 |---|---|---|
-| Receptionist subscription (Starter/Growth) | V1 | Recurring |
+| Parent Enquiry AI subscription (Starter/Growth) | V1 | Recurring |
 | Onboarding fee | V1 | One-time |
-| Clinic Growth System tier | V2 | Recurring (upsell) |
-| Template-message margin (reminders, reviews, reactivation) | V2 | Usage |
+| School Growth System tier | V2 | Recurring (upsell) |
+| Template-message margin (reminders, reviews, re-engagement) | V2 | Usage |
 | Voice add-on + per-minute margin | V3 | Recurring + usage |
-| Platform tier / multi-clinic | V4 | Recurring (expansion) |
+| Platform tier / multi-school | V4 | Recurring (expansion) |
 
-## 2. Unit economics (V1, per clinic per month — engineering-grounded)
+## 2. Unit economics (V1, per school per month — engineering-grounded)
 
-Cost structure is a designed property of the architecture (CLAUDE.md §2.7, §17):
+Cost structure is a designed property of the architecture (`/CLAUDE.md` §4–§5):
 
 | Cost item | Basis | Est. cost |
 |---|---|---|
@@ -43,28 +43,28 @@ per-minute costs → usage-priced.
 ## 3. Expansion revenue logic
 
 Net revenue retention comes from the module ladder, not seat counts:
-Starter → Growth → Clinic Growth System → +Voice → Platform/multi-branch.
+Starter → Growth → School Growth System → +Voice → Platform/multi-campus.
 Target (PROPOSED): ≥120% NRR once V2 ships; expansion driven by demonstrated ROI
-(booked-consultation reports per clinic — the metric the dashboard exists to show).
+(qualified-enquiry reports per school — the metric the dashboard exists to show).
 
 ## 4. Pricing floor (never sell below)
 
-Hard cost (₹700 ceiling) + support allocation (₹500) ≈ **₹1,200/clinic/month floor.**
+Hard cost (₹700 ceiling) + support allocation (₹500) ≈ **₹1,200/school/month floor.**
 Any discount below this is cash-negative and requires founder sign-off explicitly.
 
 ## 5. Payback & CAC guardrails (PROPOSED)
 
-- Target CAC (founder-led/direct sales era): ≤ ₹15,000 per clinic.
+- Target CAC (founder-led/direct sales era): ≤ ₹15,000 per school.
 - Payback: ≤ 3 months on Growth tier.
-- Churn assumption for planning: 2.5%/month early, trending to <1.5% as calendar
-  booking + reviews create switching costs (the clinic's booking history and review
+- Churn assumption for planning: 2.5%/month early, trending to <1.5% as calendar-booked
+  visits + reviews create switching costs (the school's visit history and review
   pipeline live with us).
 
 ## 6. Why this model wins
 
-- **Costs scale sub-linearly, revenue scales linearly.** One deployment, 500+ clinics
-  (CLAUDE.md §17); adding a clinic is rows in a database.
-- **The value metric is visible to the buyer:** every booked consultation traces to the
-  AI. V4 analytics makes ROI self-evident at renewal time.
+- **Costs scale sub-linearly, revenue scales linearly.** One deployment, 500+ schools,
+  adding a school is rows in a database.
+- **The value metric is visible to the buyer:** every qualified admission enquiry traces
+  to the AI. V4 analytics makes ROI self-evident at renewal time.
 - **Hard-cost pass-through protects margin** as usage-heavy modules (templates, voice)
   arrive.

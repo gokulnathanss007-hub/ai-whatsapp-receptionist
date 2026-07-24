@@ -83,7 +83,7 @@ describe("day picker rendering", () => {
     expect(text).not.toContain("times open");
   });
 
-  it("interactive clinics get a show_list envelope on the day_picker screen", () => {
+  it("interactive schools get a show_list envelope on the day_picker screen", () => {
     const actions = translateTurnToActions({
       finalReply: renderDayPickerText(days),
       presentedSlots: null,
@@ -101,7 +101,7 @@ describe("day picker rendering", () => {
     expect(data.text).toBe("Which day works for you?\n\nJust reply with the day.");
   });
 
-  it("text-only clinics keep the plain text (no day list envelope)", () => {
+  it("text-only schools keep the plain text (no day list envelope)", () => {
     const actions = translateTurnToActions({
       finalReply: renderDayPickerText(days),
       presentedSlots: null,

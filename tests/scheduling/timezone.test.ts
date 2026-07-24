@@ -8,7 +8,7 @@ const TZ = "Asia/Kolkata"; // UTC+05:30 — a half-hour offset catches more bugs
 // Thursday, 2026-07-02, 3:07 PM IST.
 const THURSDAY_1507 = DateTime.fromISO("2026-07-02T15:07:00", { zone: TZ }).toJSDate();
 
-describe("timezone correctness — clinic-local times must never be silently reinterpreted as UTC", () => {
+describe("timezone correctness — school-local times must never be silently reinterpreted as UTC", () => {
   it("'Monday 5 PM' resolves to 17:00 in Asia/Kolkata (11:30 UTC) — not 17:00 UTC", () => {
     const target = resolveRequestedDateTime({
       text: "Book me on Monday at 5 PM",
@@ -17,7 +17,7 @@ describe("timezone correctness — clinic-local times must never be silently rei
     })!;
     expect(target.toISO()).toBe("2026-07-06T17:00:00.000+05:30");
     expect(target.toUTC().toISO()).toBe("2026-07-06T11:30:00.000Z");
-    // 17:00 UTC would be 10:30 PM IST — a 5.5 hour error a patient would definitely notice.
+    // 17:00 UTC would be 10:30 PM IST — a 5.5 hour error a parent would definitely notice.
     expect(target.toUTC().toISO()).not.toBe("2026-07-06T17:00:00.000Z");
   });
 

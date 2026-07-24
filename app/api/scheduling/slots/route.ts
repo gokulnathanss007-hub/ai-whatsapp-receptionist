@@ -13,9 +13,9 @@ export async function GET(request: Request): Promise<Response> {
     return new Response("Forbidden", { status: 403 });
   }
 
-  const clinicId = url.searchParams.get("clinic_id");
-  if (!clinicId) {
-    return new Response("Missing clinic_id", { status: 400 });
+  const schoolId = url.searchParams.get("school_id");
+  if (!schoolId) {
+    return new Response("Missing school_id", { status: 400 });
   }
 
   const daysAheadParam = url.searchParams.get("days_ahead");
@@ -26,11 +26,11 @@ export async function GET(request: Request): Promise<Response> {
     });
   }
 
-  const slots = await listAvailableSlots({ clinicId, daysAhead });
+  const slots = await listAvailableSlots({ schoolId, daysAhead });
   if (slots === null) {
     return Response.json({
       available: false,
-      reason: "Clinic has no connected (or currently working) Google Calendar",
+      reason: "School has no connected (or currently working) Google Calendar",
     });
   }
 

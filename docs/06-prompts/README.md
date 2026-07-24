@@ -8,9 +8,9 @@
 
 | Asset | Source of truth | Documented at | Used by |
 |---|---|---|---|
-| Receptionist system prompt (static block) | `prompts/system_prompt.md` | `../03-engineering/SYSTEM_PROMPT.md` | `lib/ai/promptBuilder.ts` |
-| Clinic knowledge block (rendered) | DB records via `lib/knowledge/loader.ts` | `../03-engineering/KNOWLEDGE_STRUCTURE.md` §4 | prompt layer 2 |
-| `<patient_info>` block (rendered) | `conversations.collected_slots` via `renderCollectedInfoBlock` | `../03-engineering/SYSTEM_PROMPT.md` (injected variables) | prompt layer 3 |
+| Front office system prompt (static block) | `prompts/system_prompt.md` | `../03-engineering/SYSTEM_PROMPT.md` | `lib/ai/promptBuilder.ts` |
+| School knowledge block (rendered) | DB records via `lib/knowledge/loader.ts` | `../03-engineering/KNOWLEDGE_STRUCTURE.md` §4 | prompt layer 2 |
+| `<parent_info>` block (rendered) | `conversations.collected_slots` via `renderCollectedInfoBlock` | `../03-engineering/SYSTEM_PROMPT.md` (injected variables) | prompt layer 3 |
 | `<available_slots>` block (rendered) | `lib/scheduling/renderSlotsBlock.ts` | `../03-engineering/GOOGLE_CALENDAR_INTEGRATION.md` §5 | prompt layer 4 |
 | AI output JSON schema | `lib/ai/jsonSchema.ts` (mirrors `lib/types.ts`) | `../03-engineering/PROMPT_ENGINEERING.md` §4 | Structured Outputs |
 
@@ -32,6 +32,6 @@ requires Meta approval tracking).
 
 - No per-turn interpolation into the static block — it destroys prompt caching
   (~10× cost) silently. Per-turn content goes in layers 3–5 only.
-- Prompt text never contains clinic-specific facts (multi-tenancy) or secrets.
+- Prompt text never contains school-specific facts (multi-tenancy) or secrets.
 - Every hard rule added to the prompt gets a code-level twin or an explicit note on why
-  none is possible (`/CLAUDE.md` §6.3).
+  none is possible (`/CLAUDE.md` §5).

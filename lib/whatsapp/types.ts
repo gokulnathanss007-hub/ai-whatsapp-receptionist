@@ -59,7 +59,7 @@ export interface InboundTextMessage {
   fromWaId: string;
   contactName: string | null;
   body: string;
-  /** Set when the patient tapped a button/list row: the backend key (e.g. a slot id) Meta echoed back. Null for typed messages. */
+  /** Set when the parent tapped a button/list row: the backend key (e.g. a slot id) Meta echoed back. Null for typed messages. */
   interactiveReplyId: string | null;
 }
 

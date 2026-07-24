@@ -5,10 +5,10 @@ import { dayRowId, type DayOption } from "@/lib/scheduling/dayPicker";
 /**
  * Translates the pipeline's final v1-shaped turn outcome into the ordered
  * action list of DECISION_ENGINE.md §3 — migration step 1 (§6): a pure
- * mapping, no behaviour change for text-only clinics.
+ * mapping, no behaviour change for text-only schools.
  *
  * `finalReply` is the already-guardrailed text the v1 pipeline would send.
- * When the turn is presenting a slot list AND the clinic has interactive
+ * When the turn is presenting a slot list AND the school has interactive
  * rendering enabled, the bullet list is lifted out of the text and becomes a
  * show_calendar_slots action (a tappable WhatsApp list); the surrounding
  * sentences stay as the list body. Every tap has a typed equivalent — the
@@ -44,7 +44,7 @@ export function translateTurnToActions(params: {
             {
               title: "Open days",
               // Just the day — no free-slot counts; "20 times open" confused
-              // patients (product decision 2026-07-18).
+              // parents (product decision 2026-07-18).
               rows: presentedDays.map((day) => ({
                 id: dayRowId(day.dayKey),
                 title: day.title,

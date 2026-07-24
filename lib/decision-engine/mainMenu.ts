@@ -1,31 +1,33 @@
 import type { Action, ListRow } from "@/lib/decision-engine/types";
-import type { ClinicDoctor, ClinicService } from "@/lib/knowledge/types";
+import type { SchoolService } from "@/lib/knowledge/types";
 
 // The Main Menu — the product's front door (PATIENT_EXPERIENCE.md §3).
 // Item ids are backend keys handled deterministically in the pipeline;
 // titles/descriptions are the human labels. Static by design: menu items
 // map 1:1 onto intents, and adding one is a product decision, not a
-// per-clinic customization (clinic knowledge customizes the CONTENT each
+// per-school customization (school knowledge customizes the CONTENT each
 // item answers with, never the menu shape).
 
 export const MAIN_MENU_ITEMS: ListRow[] = [
-  { id: "menu_book_appointment", title: "📅 Book Appointment", description: "Schedule your consultation" },
-  { id: "menu_treatments", title: "💆 Treatments", description: "What we offer" },
-  { id: "menu_consultation_fee", title: "💰 Consultation Fee", description: "Fee details" },
-  { id: "menu_clinic_timings", title: "🕒 Clinic Timings", description: "Our open hours" },
-  { id: "menu_location", title: "📍 Clinic Location", description: "Address and directions" },
-  { id: "menu_talk_to_human", title: "👩 Talk to Receptionist", description: "Chat with our team" },
+  { id: "menu_admission_enquiry", title: "📝 Admission Enquiry", description: "Start an admission enquiry" },
+  { id: "menu_fee_structure", title: "💰 Fee Structure", description: "Fee details" },
+  { id: "menu_school_timings", title: "🕒 School Timings", description: "Our open hours" },
+  { id: "menu_transport", title: "🚌 Transport", description: "Bus routes and pickup" },
+  { id: "menu_facilities", title: "🏫 Facilities", description: "Our campus facilities" },
+  { id: "menu_contact_office", title: "☎️ Contact School Office", description: "Talk to our team" },
+  { id: "menu_location", title: "📍 School Location", description: "Address and directions" },
+  { id: "menu_ask_anything", title: "💬 Ask Anything", description: "Type your own question" },
 ];
 
 const MENU_ITEM_IDS = new Set(MAIN_MENU_ITEMS.map((item) => item.id));
 
 /**
- * "Talk to Receptionist" handoff text — includes a direct contact number
- * when the clinic has one configured (clinics.reception_phone), so the
- * patient isn't just told "staff will reply here soon" with no way to reach
+ * "Contact School Office" handoff text — includes a direct contact number
+ * when the school has one configured (schools.reception_phone), so the
+ * parent isn't just told "staff will reply here soon" with no way to reach
  * a real person now. Never hardcoded: falls back to the generic message for
- * any clinic that hasn't set a number. Clinic hours are included alongside
- * the number so the patient knows when a call will actually be answered.
+ * any school that hasn't set a number. School hours are included alongside
+ * the number so the parent knows when a call will actually be answered.
  *
  * Deliberately does NOT promise "they will reply to you here soon" — there
  * is no in-thread staff-reply feature built yet, so that line was a promise
@@ -34,14 +36,19 @@ const MENU_ITEM_IDS = new Set(MAIN_MENU_ITEMS.map((item) => item.id));
 export function renderHandoffText(params: { receptionPhone: string | null; openingHoursText: string | null }): string {
   const { receptionPhone, openingHoursText } = params;
   if (!receptionPhone) {
-    return "I will connect you with our clinic team.";
+    return "I will connect you with our school office team.";
   }
   const lines = [
-    "I will connect you with our clinic team.",
+    "I will connect you with our school office team.",
     "",
-    `📞 You can call our receptionist directly at ${receptionPhone} for immediate assistance.`,
+    `📞 You can call our school office directly at ${receptionPhone} for immediate assistance.`,
   ];
-  if (openingHoursText) lines.push(`🕒 We are available: ${openingHoursText}.`);
+  if (openingHoursText) {
+    // openingHoursText may already be a full sentence (e.g. school-authored
+    // schools.timings free text ending in its own period) — never double up.
+    const hours = openingHoursText.trim().replace(/\.+$/, "");
+    lines.push("", `🕒 We are available: ${hours}.`);
+  }
   return lines.join("\n");
 }
 
@@ -66,9 +73,10 @@ export function isMenuRequest(text: string): boolean {
 /**
  * Resolves an inbound message to a menu item id, or null.
  * - A tap: interactiveReplyId is a menu_* id.
- * - Typed digit 1-6: only honoured when the LAST screen shown was the menu
- *   (conversations.current_screen) — "2" during qualifying means an answer,
- *   not a menu pick. Every tap has a typed equivalent (§4.2).
+ * - Typed digit 1-N (N = MAIN_MENU_ITEMS.length): only honoured when the LAST
+ *   screen shown was the menu (conversations.current_screen) — "2" during
+ *   qualifying means an answer, not a menu pick. Every tap has a typed
+ *   equivalent (§4.2).
  */
 export function resolveMenuSelection(params: {
   body: string;
@@ -79,73 +87,54 @@ export function resolveMenuSelection(params: {
     return params.interactiveReplyId;
   }
   if (params.currentScreen === "main_menu") {
-    const digit = /^\s*([1-6])\s*$/.exec(params.body);
-    if (digit) return MAIN_MENU_ITEMS[parseInt(digit[1]!, 10) - 1]!.id;
+    const digit = /^\s*(\d{1,2})\s*$/.exec(params.body);
+    if (digit) {
+      const index = parseInt(digit[1]!, 10) - 1;
+      if (index >= 0 && index < MAIN_MENU_ITEMS.length) return MAIN_MENU_ITEMS[index]!.id;
+    }
   }
   return null;
 }
 
 export function renderMainMenu(params: {
-  clinicName: string;
-  patientName?: string | null;
+  schoolName: string;
+  parentName?: string | null;
 }): Extract<Action, { action: "show_main_menu" }> {
-  const welcomeText = params.patientName
-    ? `Hi ${params.patientName}! Welcome back to ${params.clinicName}. 👋\nHow can we help you today?`
-    : `Welcome to ${params.clinicName}! 👋\nHow can we help you today?`;
+  const welcomeText = params.parentName
+    ? `Hi ${params.parentName}! Welcome back to ${params.schoolName}. 👋\n\nHow may I assist you today?`
+    : `Welcome to ${params.schoolName}. 👋\n\nHow may I assist you today?`;
   return { action: "show_main_menu", screen: "main_menu", data: { welcomeText, items: MAIN_MENU_ITEMS } };
 }
 
-/** Text-only clinics get the same menu as a numbered list — reply "1"-"6" works (see resolveMenuSelection). */
-export function renderMainMenuText(params: { clinicName: string; patientName?: string | null }): string {
-  const welcome = params.patientName
-    ? `Hi ${params.patientName}! Welcome back to ${params.clinicName}. 👋`
-    : `Welcome to ${params.clinicName}! 👋`;
+/** Text-only schools get the same menu as a numbered list — reply "1"-"N" works (see resolveMenuSelection). */
+export function renderMainMenuText(params: { schoolName: string; parentName?: string | null }): string {
+  const welcome = params.parentName
+    ? `Hi ${params.parentName}! Welcome back to ${params.schoolName}. 👋`
+    : `Welcome to ${params.schoolName}. 👋`;
   const lines = MAIN_MENU_ITEMS.map((item, i) => `${i + 1}. ${item.title}`);
-  return `${welcome}\nHow can we help you today?\n\n${lines.join("\n")}\n\nReply with a number, or just type your question.`;
+  return `${welcome}\n\nHow may I assist you today?\n\n${lines.join("\n")}\n\nReply with a number, or just type your question.`;
 }
 
 /**
- * Treatments as a tappable list (rows come from clinic knowledge, never
- * hardcoded). Row ids carry the service_key — tapping one shows that
- * treatment's info with a Book button, and the tapped treatment is captured
- * as the patient's concern so booking continues without re-asking.
+ * School programs/grades as a tappable list (rows come from school
+ * knowledge, never hardcoded). Row ids carry the service_key — tapping one
+ * shows that program's info, and the tapped program is captured as the
+ * parent's enquiry details so booking continues without re-asking.
  */
-export function renderTreatmentsList(services: ClinicService[]): Extract<Action, { action: "show_list" }> {
+export function renderSchoolServicesList(services: SchoolService[]): Extract<Action, { action: "show_list" }> {
   return {
     action: "show_list",
-    screen: "treatment_info",
+    screen: "school_service_info",
     data: {
-      text: "Here is what we offer. Tap a treatment to know more.",
-      buttonLabel: "Treatments",
+      text: "Here is what we offer.\n\nTap one to know more.",
+      buttonLabel: "Programs",
       sections: [
         {
-          title: "Popular treatments",
+          title: "Our programs",
           rows: services.slice(0, 10).map((service) => ({
-            id: `treatment_${service.service_key}`,
+            id: `service_${service.service_key}`,
             title: service.display_name,
             ...(service.high_level_info ? { description: service.high_level_info } : {}),
-          })),
-        },
-      ],
-    },
-  };
-}
-
-/** Shown only when the clinic actually has more than one active doctor — data-driven, never hardcoded. */
-export function renderDoctorList(doctors: ClinicDoctor[]): Extract<Action, { action: "show_list" }> {
-  return {
-    action: "show_list",
-    screen: "doctor_selection",
-    data: {
-      text: "Which doctor would you like to see?",
-      buttonLabel: "Choose doctor",
-      sections: [
-        {
-          title: "Our doctors",
-          rows: doctors.map((doctor, i) => ({
-            id: `doctor_${i}`,
-            title: doctor.name,
-            ...(doctor.role ? { description: doctor.role } : {}),
           })),
         },
       ],

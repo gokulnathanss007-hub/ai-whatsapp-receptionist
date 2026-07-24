@@ -1,13 +1,14 @@
-// Hand-written row types mirroring /supabase/migrations/0001_init.sql.
+// Hand-written row types mirroring /supabase/migrations/0001_init.sql
+// through /supabase/migrations/0012_rename_clinic_to_school.sql.
 // Regenerate/replace with `supabase gen types typescript` once a live project exists.
 import type {
-  AppointmentRequestStatus,
+  AdmissionEnquiryStatus,
   BookingStatus,
   ConversationStage,
   HandoffReason,
 } from "@/lib/types";
 
-export interface ClinicRow {
+export interface SchoolRow {
   id: string;
   name: string;
   city: string | null;
@@ -16,17 +17,16 @@ export interface ClinicRow {
   timings: string | null;
   parking_info: string | null;
   languages: string[];
-  consultation_fee: number | null;
   payment_methods: string[];
   follow_up_policy: string | null;
   cancellation_policy: string | null;
   rescheduling_policy: string | null;
   auto_confirm_enabled: boolean;
-  /** V2 phase 1 rollout flag: render slot offers as tappable WhatsApp list messages. Text-only clinics keep plain text. */
+  /** V2 phase 1 rollout flag: render slot offers as tappable WhatsApp list messages. Text-only schools keep plain text. */
   interactive_enabled: boolean;
-  /** Direct contact number surfaced on the "Talk to Receptionist" handoff. Null → generic "staff will reply here" message. */
+  /** Direct contact number surfaced on the "Talk to Receptionist" handoff. Null → generic "office will reply here" message. */
   reception_phone: string | null;
-  /** Single source of truth for the clinic's real hours — drives both the AI's stated hours and Google Calendar slot generation. Empty ({}) means "not configured yet." */
+  /** Single source of truth for the school's real hours — drives both the AI's stated hours and Google Calendar slot generation. Empty ({}) means "not configured yet." */
   opening_hours: WorkingHours;
   slot_duration_minutes: number;
   timezone: string;
@@ -35,34 +35,34 @@ export interface ClinicRow {
   updated_at: string;
 }
 
-export interface ClinicWhatsappNumberRow {
+export interface SchoolWhatsappNumberRow {
   id: string;
-  clinic_id: string;
+  school_id: string;
   phone_number_id: string;
   display_number: string | null;
   created_at: string;
 }
 
-export interface ClinicDoctorRow {
+export interface SchoolStaffRow {
   id: string;
-  clinic_id: string;
+  school_id: string;
   name: string;
   role: string | null;
   is_active: boolean;
 }
 
-export interface ClinicServiceRow {
+export interface SchoolServiceRow {
   id: string;
-  clinic_id: string;
+  school_id: string;
   service_key: string;
   display_name: string;
   high_level_info: string | null;
   is_active: boolean;
 }
 
-export interface ClinicFaqRow {
+export interface SchoolFaqRow {
   id: string;
-  clinic_id: string;
+  school_id: string;
   faq_id: string;
   category: string;
   question: string;
@@ -71,9 +71,9 @@ export interface ClinicFaqRow {
   requires_staff: boolean;
 }
 
-export interface PatientRow {
+export interface ParentRow {
   id: string;
-  clinic_id: string;
+  school_id: string;
   wa_phone: string;
   name: string | null;
   first_seen_at: string;
@@ -82,8 +82,8 @@ export interface PatientRow {
 
 export interface ConversationRow {
   id: string;
-  clinic_id: string;
-  patient_id: string;
+  school_id: string;
+  parent_id: string;
   stage: ConversationStage;
   collected_slots: Record<string, unknown>;
   human_handoff: boolean;
@@ -91,7 +91,7 @@ export interface ConversationRow {
   booking_status: BookingStatus;
   booking_status_updated_at: string;
   booking_in_progress_message_id: string | null;
-  /** Semantic journey moment last shown (PATIENT_EXPERIENCE.md §2) — e.g. 'main_menu' lets a typed "2" resolve as a menu pick. */
+  /** Semantic journey moment last shown (docs/03-engineering/PATIENT_EXPERIENCE.md §2) — e.g. 'main_menu' lets a typed "2" resolve as a menu pick. */
   current_screen: string;
   last_message_at: string;
   created_at: string;
@@ -107,19 +107,21 @@ export interface MessageRow {
   created_at: string;
 }
 
-export interface AppointmentRequestRow {
+export interface AdmissionEnquiryRow {
   id: string;
-  clinic_id: string;
-  patient_id: string;
+  school_id: string;
+  parent_id: string;
   conversation_id: string;
   name: string | null;
   mobile: string | null;
-  preferred_doctor: string | null;
+  grade_applying_for: string | null;
   preferred_date: string | null;
   preferred_time: string | null;
   reason: string | null;
-  status: AppointmentRequestStatus;
+  status: AdmissionEnquiryStatus;
   created_at: string;
+  /** Child's name — collected by the "Talk to Admission Office" step (lib/decision-engine/admissionMenu.ts). Null for rows from the older AI-driven flow. */
+  child_name: string | null;
 }
 
 export interface ProcessedEventRow {
@@ -127,16 +129,28 @@ export interface ProcessedEventRow {
   processed_at: string;
 }
 
-export type ClinicGoogleAccountSyncStatus = "connected" | "error" | "disconnected";
+/** Backs the "send_pdf" / "send_image" Decision Engine actions — see 0014_school_assets.sql. */
+export interface SchoolAssetRow {
+  id: string;
+  school_id: string;
+  asset_key: string;
+  file_url: string;
+  filename: string;
+  caption: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
-/** { mon: [["10:00","20:00"]], tue: [...], ... } — 24h "HH:mm", clinic-local time. */
+export type SchoolGoogleAccountSyncStatus = "connected" | "error" | "disconnected";
+
+/** { mon: [["09:00","16:00"]], tue: [...], ... } — 24h "HH:mm", school-local time. */
 export type WorkingHours = Partial<
   Record<"mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun", Array<[string, string]>>
 >;
 
-export interface ClinicGoogleAccountRow {
+export interface SchoolGoogleAccountRow {
   id: string;
-  clinic_id: string;
+  school_id: string;
   google_email: string;
   calendar_id: string;
   /** AES-256-GCM ciphertext — decrypt with lib/google/tokenCrypto.ts before use. */
@@ -145,7 +159,7 @@ export interface ClinicGoogleAccountRow {
   refresh_token: string;
   token_expiry: string;
   scope: string;
-  sync_status: ClinicGoogleAccountSyncStatus;
+  sync_status: SchoolGoogleAccountSyncStatus;
   last_sync_error: string | null;
   connected_at: string;
   updated_at: string;
@@ -156,10 +170,10 @@ export type AppointmentSyncStatus = "pending" | "synced" | "failed";
 
 export interface AppointmentRow {
   id: string;
-  clinic_id: string;
-  patient_id: string;
+  school_id: string;
+  parent_id: string;
   conversation_id: string;
-  clinic_google_account_id: string;
+  school_google_account_id: string;
   name: string;
   mobile: string;
   reason: string;

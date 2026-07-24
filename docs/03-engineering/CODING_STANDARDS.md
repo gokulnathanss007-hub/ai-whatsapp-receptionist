@@ -1,6 +1,6 @@
 # CODING_STANDARDS.md — Engineering Coding Standards
 
-> Expands `/CLAUDE.md` §3 (constitutional summary). If the two disagree, CLAUDE.md wins
+> Expands `/CLAUDE.md` §7 (constitutional summary). If the two disagree, CLAUDE.md wins
 > and this file is corrected. Related: `SECURITY.md`, `../07-testing/TESTING_STRATEGY.md`.
 
 ---
@@ -30,7 +30,7 @@
 - **Route handlers are thin:** validate → delegate → respond.
 - **Tasks are orchestration:** a Trigger task should read like the pipeline diagram in
   `PROJECT_ARCHITECTURE.md`; logic lives in `/lib`.
-- **No clinic data in code** — anywhere, ever. Config is rows (CLAUDE.md §7).
+- **No school data in code** — anywhere, ever. Config is rows (`/CLAUDE.md` §6).
 
 ## 3. Reliability standards
 
@@ -39,7 +39,7 @@
   `processed_events`) — DB-enforced, not memory-enforced.
 - **Expected-error handling:** Postgres `23505` on designed unique constraints is a
   *signal*, handled explicitly (booking conflict path) — never swallowed generically.
-- **Fail closed on safety, degrade gracefully on availability** (`/CLAUDE.md` §11).
+- **Fail closed on safety, degrade gracefully on availability** (`/CLAUDE.md` §7).
 - **Guarded sends:** check for an existing reply to this inbound message before sending.
 - **Bounded retries** with terminal states left queryable (`sync_retry_count` pattern).
 
@@ -58,11 +58,14 @@
 
 ## 5. Dates, times, money
 
-- All datetime math via `luxon`, always in the clinic's IANA timezone
-  (`clinics.timezone`); persist UTC instants (`timestamptz`); render clinic-local labels.
+- All datetime math via `luxon`, always in the school's IANA timezone
+  (`schools.timezone`); persist UTC instants (`timestamptz`); render school-local labels.
 - Never parse ambiguous datetime text into a guess — resolve to `null` and let the
   flow re-ask (`lib/scheduling/requestedDateTime.ts` is the binding precedent).
 - Money as numerics in the DB, formatted at the edge; never floats for arithmetic.
+  Note: `schools` has no single fee column — fee structure is FAQ content, not a
+  numeric field, so this rule applies to future fee-related tables (e.g. payment
+  tracking), not today's schema.
 
 ## 6. Testing standards (summary — full: `../07-testing/TESTING_STRATEGY.md`)
 
@@ -75,8 +78,7 @@
 ## 7. PR & review standards
 
 - Small, single-purpose PRs; migrations + code + docs + tests travel together.
-- A PR that changes behaviour documented anywhere updates that doc in the same PR
-  (CLAUDE.md §2.9).
+- A PR that changes behaviour documented anywhere updates that doc in the same PR.
 - Review blockers: `any` in domain code, inline external calls, unguarded model output
   reaching a side effect, missing idempotency on a new external trigger, secrets or PII
   in logs, migration edits to applied migrations.

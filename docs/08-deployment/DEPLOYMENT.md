@@ -13,13 +13,13 @@
 | Next.js app + webhook routes | **Vercel** | `.vercel/project.json` links the project; `vercel` CLI in devDeps |
 | Reply pipeline + sweeps | **Trigger.dev v4** | `trigger.config.ts`; tasks in `/trigger` |
 | Database | **Supabase (Postgres)** | Migrations in `supabase/migrations/` (append-only) |
-| Messaging | **Meta WhatsApp Cloud API (direct)** | Clinic numbers → shared webhook |
+| Messaging | **Meta WhatsApp Cloud API (direct)** | School numbers → shared webhook |
 | AI | **OpenAI** (`gpt-5-nano`) | Structured Outputs; automatic prompt caching |
-| Calendar | **Google Calendar API** | Per-clinic OAuth; redirect `https://app.medixum.ai/api/auth/google/callback` |
+| Calendar | **Google Calendar API** | Per-school OAuth; redirect `https://app.schoolparentenquiry.ai/api/auth/google/callback` |
 
 ## 2. Environment variables (complete matrix)
 
-Naming convention: flat, provider-prefixed `SCREAMING_SNAKE_CASE` (`/CLAUDE.md` §3).
+Naming convention: flat, provider-prefixed `SCREAMING_SNAKE_CASE` (`/CLAUDE.md` §7).
 Template: `.env.example` (names only, never values).
 
 ```
@@ -61,23 +61,25 @@ SCHEDULING_LOOKAHEAD_DAYS      # default 3
 4. Pre-deploy checks: `npm run typecheck`, `npm test`, and the release gates in
    `../07-testing/TESTING_STRATEGY.md` §5 for version bumps.
 
-## 4. Onboarding a clinic (production runbook — no code, no deploy)
+## 4. Onboarding a school (production runbook — no code, no deploy)
 
-1. Create `clinics` row (profile, fees, policies, `opening_hours`, timezone,
+1. Create `schools` row (profile, policies, `opening_hours`, timezone,
    `auto_confirm_enabled`); `knowledge_version = 1`.
-2. Add `clinic_doctors`, `clinic_services` (from master list), `clinic_faqs`.
-3. Map the WhatsApp number: `clinic_whatsapp_numbers.phone_number_id` → clinic.
+2. Add `school_staff`, `school_services` (programs/grades offered), `school_faqs`
+   (include a `fee_structure` category row — there is no dedicated fee column).
+3. Map the WhatsApp number: `school_whatsapp_numbers.phone_number_id` → school.
 4. Optional calendar: run the OAuth connect route with `ADMIN_SETUP_TOKEN`; verify
-   `clinic_google_accounts.sync_status = 'connected'`; verify a slot listing.
+   `school_google_accounts.sync_status = 'connected'`; verify a slot listing.
 5. Send a live test message end-to-end before handover.
-(Seed precedent: `supabase/seed/glow_skin_madurai.sql`.)
+(Seed precedent: `supabase/seed/sunrise_public_school.sql` +
+`sunrise_public_school_working_hours.sql`.)
 
 ## 5. Operational notes
 
 - **Webhook health is P0:** Meta disables webhooks that fail repeatedly — alert on
   signature failures and non-200s.
-- **Token refresh failures** flip `sync_status='error'` and silently degrade that clinic
-  to the free-text flow — surface these in monitoring; they're invisible to patients by
+- **Token refresh failures** flip `sync_status='error'` and silently degrade that school
+  to the free-text flow — surface these in monitoring; they're invisible to parents by
   design.
 - **Calendar sync retries** run via scheduled sweep; exhausted retries stay queryable
   for manual reconciliation.
