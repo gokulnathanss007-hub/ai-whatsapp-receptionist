@@ -151,15 +151,15 @@ export function renderSchoolServicesList(services: SchoolService[]): Extract<Act
 // informational only for now.
 const FACILITIES_TEXT =
   "🏫 *Facilities*\n\n" +
-  "1️⃣ Smart Classrooms\n\n" +
-  "2️⃣ Library\n\n" +
-  "3️⃣ Laboratories\n\n" +
-  "4️⃣ Sports & Playground\n\n" +
-  "5️⃣ Transport\n\n" +
-  "6️⃣ Hostel\n\n" +
-  "7️⃣ Safety & Security\n\n" +
-  "8️⃣ Other Facilities\n\n" +
-  "9️⃣ Back to Main Menu";
+  "1️⃣ 🖥️ Smart Classrooms\n\n" +
+  "2️⃣ 📚 Library\n\n" +
+  "3️⃣ 🔬 Laboratories\n\n" +
+  "4️⃣ ⚽ Sports & Playground\n\n" +
+  "5️⃣ 🚌 Transport\n\n" +
+  "6️⃣ 🏠 Hostel\n\n" +
+  "7️⃣ 🛡️ Safety & Security\n\n" +
+  "8️⃣ ✨ Other Facilities\n\n" +
+  "9️⃣ 🔙 Back to Main Menu";
 
 export function renderFacilitiesText(): string {
   return FACILITIES_TEXT;
