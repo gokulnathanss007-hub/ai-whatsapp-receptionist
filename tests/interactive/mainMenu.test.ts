@@ -55,11 +55,11 @@ describe("menu selection resolution — every tap has a typed equivalent", () =>
 });
 
 describe("menu rendering", () => {
-  it("interactive menu envelope: screen main_menu, all eight items, ids intact", () => {
+  it("interactive menu envelope: screen main_menu, all nine items, ids intact", () => {
     const action = renderMainMenu({ schoolName: "Sunrise Public School", parentName: "Gokul" });
     expect(action.action).toBe("show_main_menu");
     expect(action.screen).toBe("main_menu");
-    expect(action.data.items).toHaveLength(8);
+    expect(action.data.items).toHaveLength(9);
     expect(action.data.items.map((i) => i.id)).toContain("menu_contact_office");
     expect(action.data.welcomeText).toContain("Gokul");
     expect(action.data.welcomeText).toContain("Sunrise Public School");
@@ -73,7 +73,7 @@ describe("menu rendering", () => {
       sections: [{ title: "School Services", rows: MAIN_MENU_ITEMS }],
     }) as any;
     const rows = payload.interactive.action.sections[0].rows;
-    expect(rows).toHaveLength(8);
+    expect(rows).toHaveLength(9);
     for (const row of rows) {
       expect(row.title.length).toBeLessThanOrEqual(24);
       expect((row.description ?? "").length).toBeLessThanOrEqual(72);

@@ -15,6 +15,7 @@ export const MAIN_MENU_ITEMS: ListRow[] = [
   { id: "menu_transport", title: "🚌 Transport", description: "Bus routes and pickup" },
   { id: "menu_facilities", title: "🏫 Facilities", description: "Our campus facilities" },
   { id: "menu_contact_office", title: "☎️ Contact School Office", description: "Talk to our team" },
+  { id: "menu_certificates", title: "📄 Certificates", description: "Transfer / bonafide certificates" },
   { id: "menu_location", title: "📍 School Location", description: "Address and directions" },
   { id: "menu_ask_anything", title: "💬 Ask Anything", description: "Type your own question" },
 ];

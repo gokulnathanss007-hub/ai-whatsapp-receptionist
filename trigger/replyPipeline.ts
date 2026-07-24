@@ -106,6 +106,7 @@ const CLAIMS_COMPLETION_PATTERN =
 // send a file (PDF/image) instead of plain FAQ text.
 const FAQ_MENU_ITEMS: Record<string, { category: string; intent: string }> = {
   menu_facilities: { category: "facilities", intent: "facilities" },
+  menu_certificates: { category: "certificates", intent: "certificates" },
 };
 
 /** school_assets.asset_key for the Transport menu's routes/schedule PDF (product decision 2026-07-23). */
