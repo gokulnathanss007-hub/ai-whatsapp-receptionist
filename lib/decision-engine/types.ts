@@ -24,6 +24,7 @@ export type Screen =
   | "booking_failed"
   | "school_service_info"
   | "school_location"
+  | "facilities_menu"
   | "handoff"
   | "free_text"
   // Admission Desk sub-flow (lib/decision-engine/admissionMenu.ts) — isolated

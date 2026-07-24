@@ -142,3 +142,30 @@ export function renderSchoolServicesList(services: SchoolService[]): Extract<Act
     },
   };
 }
+
+// ── Facilities — a single terminal text reply, not an interactive picker
+// (product decision 2026-07-24). Categories are static/product-level, same
+// reasoning as MAIN_MENU_ITEMS: the list of facility TYPES a school can have
+// is a fixed product shape, not per-school knowledge. "Back to Main Menu" is
+// the only functional option (isFacilitiesBackSelection) — the other 8 are
+// informational only for now.
+const FACILITIES_TEXT =
+  "🏫 *Facilities*\n\n" +
+  "1️⃣ Smart Classrooms\n\n" +
+  "2️⃣ Library\n\n" +
+  "3️⃣ Laboratories\n\n" +
+  "4️⃣ Sports & Playground\n\n" +
+  "5️⃣ Transport\n\n" +
+  "6️⃣ Hostel\n\n" +
+  "7️⃣ Safety & Security\n\n" +
+  "8️⃣ Other Facilities\n\n" +
+  "9️⃣ Back to Main Menu";
+
+export function renderFacilitiesText(): string {
+  return FACILITIES_TEXT;
+}
+
+/** True when the parent typed "9" while the Facilities list was the last screen shown. */
+export function isFacilitiesBackSelection(body: string): boolean {
+  return /^\s*9\s*$/.test(body.trim());
+}

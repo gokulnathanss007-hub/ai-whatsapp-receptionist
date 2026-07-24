@@ -43,8 +43,10 @@ import { sendWhatsAppTextMessage } from "@/lib/whatsapp/sendMessage";
 import { executeActionsOnWhatsApp } from "@/lib/whatsapp/channelAdapter";
 import { translateTurnToActions } from "@/lib/decision-engine/translateV1";
 import {
+  isFacilitiesBackSelection,
   isGreetingOnly,
   isMenuRequest,
+  renderFacilitiesText,
   renderHandoffText,
   renderMainMenu,
   renderMainMenuText,
@@ -102,10 +104,11 @@ const CLAIMS_COMPLETION_PATTERN =
 // needed. Mirrors the 1:1 menu↔category mapping enforced by
 // school_faqs_category_check (0012_rename_clinic_to_school.sql).
 // menu_transport and menu_fee_structure are handled separately (see
-// TRANSPORT_PDF_ASSET_KEY / FEE_STRUCTURE_ASSET_KEY below) — they may
-// send a file (PDF/image) instead of plain FAQ text.
+// TRANSPORT_PDF_ASSET_KEY / FEE_STRUCTURE_ASSET_KEY below) — they may send a
+// file (PDF/image) instead of plain FAQ text. menu_facilities is also handled
+// separately (see renderFacilitiesText) — it's its own static numbered list,
+// not a single school_faqs answer.
 const FAQ_MENU_ITEMS: Record<string, { category: string; intent: string }> = {
-  menu_facilities: { category: "facilities", intent: "facilities" },
   menu_certificates: { category: "certificates", intent: "certificates" },
 };
 
@@ -412,6 +415,14 @@ export const replyPipelineTask = task({
         stage: "greeting",
         intent: "general_enquiry",
       });
+    } else if (menuSelection === "menu_facilities") {
+      const reply = renderFacilitiesText();
+      return deterministicTurn({
+        actions: [{ action: "reply_text", screen: "facilities_menu", data: { text: reply } }],
+        textRendering: reply,
+        stage: "faq",
+        intent: "facilities",
+      });
     } else if (menuSelection === "menu_transport") {
       // Sends the school's bus routes/schedule PDF when one is configured
       // (school_assets, 0014_school_assets.sql) — the channel adapter only
@@ -541,6 +552,13 @@ export const replyPipelineTask = task({
         : [{ action: "reply_text", screen: "main_menu", data: { text: menuText } }];
       return deterministicTurn({ actions, textRendering: menuText, stage: "greeting", intent: "greeting" });
     };
+
+    // Facilities' only functional option: typing "9" while its list is the
+    // last screen shown returns to the Main Menu (product decision
+    // 2026-07-24) — the other 8 numbered items are informational only.
+    if (conversation.current_screen === "facilities_menu" && isFacilitiesBackSelection(payload.body)) {
+      return renderMainMenuScreen();
+    }
 
     const startAdmissionOfficeCollection = () => {
       // Direct contact number + hours alongside the enquiry collector, so a
