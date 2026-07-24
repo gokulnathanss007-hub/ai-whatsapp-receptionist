@@ -4,13 +4,13 @@ import type { WorkingHours } from "@/lib/supabase/types";
 const WEEKDAY_ORDER = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
 type WeekdayKey = (typeof WEEKDAY_ORDER)[number];
 const WEEKDAY_LABEL: Record<WeekdayKey, string> = {
-  mon: "Mon",
-  tue: "Tue",
-  wed: "Wed",
-  thu: "Thu",
-  fri: "Fri",
-  sat: "Sat",
-  sun: "Sun",
+  mon: "Monday",
+  tue: "Tuesday",
+  wed: "Wednesday",
+  thu: "Thursday",
+  fri: "Friday",
+  sat: "Saturday",
+  sun: "Sunday",
 };
 
 function formatTime(hhmm: string): string {
@@ -23,7 +23,7 @@ function rangesKey(ranges: Array<[string, string]>): string {
 
 /**
  * Renders schools.opening_hours as parent-facing text, e.g.
- * "Mon–Sat: 10:00 AM–8:00 PM. Sun: Closed." This is what the school office
+ * "Monday–Saturday: 10:00 AM–8:00 PM. Sunday: Closed." This is what the school office
  * tells parents, generated from the exact same structured value the
  * scheduler uses to generate bookable slots — see
  * /docs/GOOGLE_CALENDAR_INTEGRATION.md §3. Returns null when no hours are
