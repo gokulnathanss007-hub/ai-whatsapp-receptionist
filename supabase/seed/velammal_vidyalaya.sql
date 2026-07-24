@@ -1,4 +1,5 @@
--- Demo school seed — Sunrise Public School (fictional demo tenant)
+-- Pilot school seed — Velammal Vidyalaya, Viraganoor, Madurai (real tenant,
+-- renamed 2026-07-24 from the earlier "Sunrise Public School" placeholder).
 -- Mirrors the worked example in /docs/FAQ_SCHEMA.json and
 -- /docs/03-engineering/KNOWLEDGE_STRUCTURE.md §4.
 -- Run after 0012_rename_clinic_to_school.sql. The prior "Glow Skin Clinic"
@@ -11,10 +12,10 @@ with new_school as (
     payment_methods, follow_up_policy, cancellation_policy,
     rescheduling_policy, auto_confirm_enabled, interactive_enabled, knowledge_version
   ) values (
-    'Sunrise Public School',
+    'Velammal Vidyalaya',
     'Madurai',
-    '45, College Road, Madurai',
-    'https://maps.google.com/?q=Sunrise+Public+School+Madurai',
+    'Viraganoor, Madurai',
+    'https://www.google.com/maps/search/?api=1&query=Velammal+Vidyalaya%2C+Viraganoor%2C+Madurai',
     'Monday to Saturday, 9 AM to 4 PM. Closed Sunday.',
     'Visitor parking available inside the main gate.',
     '{en}',
@@ -23,7 +24,7 @@ with new_school as (
     'Let us know and our office will cancel your scheduled visit.',
     'Share your preferred new day/time; our office will update it.',
     false,
-    -- Interactive (tappable buttons/lists) — on by default for this demo
+    -- Interactive (tappable buttons/lists) — on by default for this pilot
     -- tenant so the redesigned Admission Desk sub-flow (2026-07-23) renders
     -- as real WhatsApp list messages, not just numbered text.
     true,
@@ -40,7 +41,7 @@ from schools, (values
   ('Mrs. Kavitha Raman', 'Principal'),
   ('Mr. Arun Kumar', 'Admissions Officer')
 ) as s(name, role)
-where schools.name = 'Sunrise Public School';
+where schools.name = 'Velammal Vidyalaya';
 
 insert into school_services (school_id, service_key, display_name, high_level_info, is_active)
 select id, service_key, display_name, high_level_info, true
@@ -51,7 +52,7 @@ from schools, (values
   ('high_school', 'High School (Grades 9-10)', 'CBSE-affiliated high school curriculum, board exam preparation.'),
   ('senior_secondary', 'Senior Secondary (Grades 11-12)', 'Science and Commerce streams available.')
 ) as s(service_key, display_name, high_level_info)
-where schools.name = 'Sunrise Public School';
+where schools.name = 'Velammal Vidyalaya';
 
 insert into school_faqs (school_id, faq_id, category, question, answer, keywords, requires_staff)
 select id, faq_id, category, question, answer, keywords, requires_staff
@@ -73,8 +74,8 @@ from schools, (values
   ('certificates', 'certificates', 'How do I get a transfer certificate?',
    'Transfer and bonafide certificates are issued by our office on request. Our office will guide you through the process.', array['certificate','transfer certificate','bonafide','tc'], true),
   ('location', 'location', 'Where is the school located?',
-   'We are at 45, College Road, Madurai. A Google Maps link is shared on request.', array['address','where','location','directions','maps'], false),
+   'We are at Viraganoor, Madurai. A Google Maps link is shared on request.', array['address','where','location','directions','maps'], false),
   ('curriculum', 'general', 'What curriculum/board do you follow?',
    'We follow the CBSE curriculum from Kindergarten through Grade 12.', array['curriculum','board','cbse','syllabus'], false)
 ) as f(faq_id, category, question, answer, keywords, requires_staff)
-where schools.name = 'Sunrise Public School';
+where schools.name = 'Velammal Vidyalaya';

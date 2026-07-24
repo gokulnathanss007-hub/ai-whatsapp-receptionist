@@ -1,4 +1,4 @@
--- Sets Sunrise Public School's structured opening hours (schools.opening_hours)
+-- Sets Velammal Vidyalaya's structured opening hours (schools.opening_hours)
 -- to match its existing schools.timings text ("Monday to Saturday, 9 AM to
 -- 4 PM. Closed Sunday."). This is the single source of truth read by both
 -- the AI receptionist (lib/knowledge/loader.ts) and the Google Calendar slot
@@ -19,4 +19,4 @@ set
   }'::jsonb,
   slot_duration_minutes = 30,
   timezone = 'Asia/Kolkata'
-where schools.name = 'Sunrise Public School';
+where schools.name = 'Velammal Vidyalaya';
